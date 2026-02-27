@@ -57,7 +57,6 @@ def load_reviews_with_dates(folder_path):
 # ==============================
 # TREND DETECTION LOGIC
 # ==============================
-
 def detect_trend(year_sentiments):
     years = sorted(year_sentiments.keys())
     values = [year_sentiments[y] for y in years]
@@ -65,9 +64,19 @@ def detect_trend(year_sentiments):
     if len(values) < 2:
         return "Insufficient Data"
 
-    if values[-1] > values[0]:
+    # Calculate average yearly change
+    total_change = 0
+    for i in range(1, len(values)):
+        total_change += values[i] - values[i - 1]
+
+    avg_change = total_change / (len(values) - 1)
+
+    # Small tolerance to avoid noise
+    threshold = 0.01
+
+    if avg_change > threshold:
         return "Improving"
-    elif values[-1] < values[0]:
+    elif avg_change < -threshold:
         return "Declining"
     else:
         return "Stable"
