@@ -27,7 +27,8 @@ class TextProcessor:
 
         sentiments = self.sentiment_model.predict_batch(texts)
         embeddings = self.embedding_model.encode(texts)
-
+        print("sentiment: ", sentiments)
+        
         # ==============================
         # SAFE CLUSTERING FIX
         # ==============================
