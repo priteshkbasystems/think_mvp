@@ -1,8 +1,13 @@
-from models.sentiment_model import SentimentModel
+from scripts.input_handler import get_sample_text
+from scripts.processor import TextProcessor
 
-print("Think MVP pipeline started 🚀")
+if __name__ == "__main__":
+    print("🚀 Think MVP Pipeline Started")
 
-model = SentimentModel()
-result = model.predict("Think MVP is becoming powerful!")
+    texts = get_sample_text()
 
-print(result)
+    processor = TextProcessor()
+    results = processor.process(texts)
+
+    for r in results:
+        print(r)

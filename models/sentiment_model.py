@@ -10,5 +10,5 @@ class SentimentModel:
             device=0
         )
 
-    def predict(self, text: str):
-        return self.model(text)
+    def predict_batch(self, texts):
+        return self.model(texts)
