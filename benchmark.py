@@ -19,8 +19,7 @@ def load_texts_from_folder(folder_path):
     for file in os.listdir(folder_path):
         if file.endswith(".xlsx"):
             df = pd.read_excel(os.path.join(folder_path, file))
-            first_column = df.columns[0]
-            texts.extend(df[first_column].dropna().astype(str).tolist())
+            texts.extend(df["review"].dropna().astype(str).tolist())
 
     return texts
 
