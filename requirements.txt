@@ -1,0 +1,30 @@
+# Core Data Processing
+pandas==2.2.2
+numpy==1.26.4
+
+# PDF Processing
+PyPDF2==3.0.1
+
+# NLP Basic
+nltk==3.8.1
+textblob==0.17.1
+
+# Transformers + Embeddings (Under 2GB total model size)
+transformers==4.39.3
+sentence-transformers==2.6.1
+torch>=2.1.0
+
+# Topic Modeling
+bertopic==0.16.0
+scikit-learn==1.4.2
+
+# Visualization
+matplotlib==3.8.4
+streamlit==1.33.0
+
+# Web / Utilities
+requests==2.31.0
+beautifulsoup4==4.12.3
+
+# Testing
+pytest==8.2.0
