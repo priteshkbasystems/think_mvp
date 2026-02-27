@@ -3,6 +3,10 @@ import pandas as pd
 from scripts.processor import TextProcessor
 from scripts.root_cause_analyzer import RootCauseAnalyzer
 
+# =====================================================
+# CONFIG
+# =====================================================
+
 BANK_PATHS = {
     "Krungthai Bank": "/content/drive/MyDrive/THINK_MVP/01_Corporate_Documents/Krungthai_Bank/Reviews",
     "Kasikornbank": "/content/drive/MyDrive/THINK_MVP/01_Corporate_Documents/KBank/Reviews",
@@ -10,8 +14,13 @@ BANK_PATHS = {
     "SCB X": "/content/drive/MyDrive/THINK_MVP/01_Corporate_Documents/SCBX_CardX/Reviews",
 }
 
-OUTPUT_PATH = "/content/drive/MyDrive/THINK_MVP/04_Analysis_Output/bank_benchmark_report.txt"
+OUTPUT_DIR = "/content/drive/MyDrive/THINK_MVP/04_Analysis_Output"
+BENCHMARK_OUTPUT = os.path.join(OUTPUT_DIR, "bank_benchmark_report.txt")
 
+
+# =====================================================
+# HELPERS
+# =====================================================
 
 def load_texts_from_folder(folder_path):
     texts = []
@@ -19,7 +28,8 @@ def load_texts_from_folder(folder_path):
     for file in os.listdir(folder_path):
         if file.endswith(".xlsx"):
             df = pd.read_excel(os.path.join(folder_path, file))
-            texts.extend(df["review"].dropna().astype(str).tolist())
+            if "review" in df.columns:
+                texts.extend(df["review"].dropna().astype(str).tolist())
 
     return texts
 
@@ -37,9 +47,17 @@ def risk_label(score):
         return "Positive"
 
 
+# =====================================================
+# MAIN EXECUTION
+# =====================================================
+
 def main():
+
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
+
     processor = TextProcessor()
     rca = RootCauseAnalyzer()
+
     benchmark_results = []
 
     print("\n🏦 Running Cross-Bank Benchmark...\n")
@@ -69,17 +87,16 @@ def main():
         # =========================
         # ROOT CAUSE ANALYSIS
         # =========================
-        root_causes = rca.analyze(texts, sentiments)
+        print(f"🔎 Running Root Cause Analysis for {bank}...\n")
 
-        total_negative = sum(root_causes.values())
-
-        print("🔍 ROOT CAUSE BREAKDOWN:")
-
-        for cause, count in root_causes.most_common():
-            percentage = (count / total_negative) * 100 if total_negative > 0 else 0
-            print(f"{cause}: {count} ({percentage:.1f}%)")
-
-        print("\n")
+        rca.analyze(
+            texts=texts,
+            sentiments=sentiments,
+            bank_name=bank,
+            save_to_file=True,
+            output_dir=OUTPUT_DIR,
+            verbose=True
+        )
 
         # =========================
         # STORE BENCHMARK RESULT
@@ -97,7 +114,7 @@ def main():
     benchmark_results.sort(key=lambda x: x["overall_sentiment"])
 
     # =========================
-    # BUILD REPORT
+    # BUILD BENCHMARK REPORT
     # =========================
     lines = []
     lines.append("THAI BANK MOBILE SENTIMENT BENCHMARK")
@@ -112,13 +129,17 @@ def main():
 
     report_text = "\n".join(lines)
 
-    with open(OUTPUT_PATH, "w", encoding="utf-8") as f:
+    with open(BENCHMARK_OUTPUT, "w", encoding="utf-8") as f:
         f.write(report_text)
 
     print("\n📊 BENCHMARK RESULTS\n")
     print(report_text)
-    print("\n📄 Saved to:", OUTPUT_PATH)
+    print("\n📄 Benchmark saved to:", BENCHMARK_OUTPUT)
 
+
+# =====================================================
+# RUN
+# =====================================================
 
 if __name__ == "__main__":
     main()
