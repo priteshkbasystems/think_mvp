@@ -1,4 +1,8 @@
-from scripts.env_check import run_env_check
+from models.sentiment_model import SentimentModel
 
-if __name__ == "__main__":
-    run_env_check()
+print("Think MVP pipeline started 🚀")
+
+model = SentimentModel()
+result = model.predict("Think MVP is becoming powerful!")
+
+print(result)
