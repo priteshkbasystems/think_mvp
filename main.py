@@ -1,13 +1,26 @@
-from scripts.input_handler import get_sample_text
-from scripts.processor import TextProcessor
+import os
 
-if __name__ == "__main__":
-    print("🚀 Think MVP Pipeline Started")
+DATA_PATH = "/content/drive/MyDrive/THINK_MVP/02_Customer_Reviews/SCBX_CardX"
 
-    texts = get_sample_text()
+all_texts = []
 
-    processor = TextProcessor()
-    results = processor.process(texts)
+for root, dirs, files in os.walk(DATA_PATH):
+    for file in files:
+        if file.endswith(".txt"):
+            with open(os.path.join(root, file), "r", encoding="utf-8") as f:
+                all_texts.append(f.read())
 
-    for r in results:
-        print(r)
+processor = TextProcessor()
+results = processor.process(all_texts)
+
+for r in results[:5]:
+    print(r)
+
+    import json
+
+output_path = "/content/drive/MyDrive/THINK_MVP/04_Analysis_Output/scbx_analysis.json"
+
+with open(output_path, "w") as f:
+    json.dump(results, f, indent=4)
+
+print("✅ Analysis saved to Drive")
