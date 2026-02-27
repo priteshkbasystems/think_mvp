@@ -17,7 +17,10 @@ class TextProcessor:
 
         if len(texts) == 0:
             print("⚠ No texts found. Exiting.")
-            return [], ""
+            return [], "", {
+                "total_reviews": 0,
+                "overall_sentiment": 0.0
+            }
 
         sentiments = self.sentiment_model.predict_batch(texts)
         embeddings = self.embedding_model.encode(texts)
@@ -45,11 +48,13 @@ class TextProcessor:
             cluster_texts[cluster_id].append(text)
 
         # ==============================
-        # Build Executive Summary
+        # Executive Summary
         # ==============================
 
         total_reviews = len(texts)
-        overall_sentiment = np.mean([v for values in cluster_data.values() for v in values])
+        overall_sentiment = np.mean(
+            [v for values in cluster_data.values() for v in values]
+        )
 
         summary_lines = []
         summary_lines.append("EXECUTIVE CUSTOMER INTELLIGENCE REPORT")
@@ -76,6 +81,7 @@ class TextProcessor:
             vectorizer = TfidfVectorizer(stop_words="english", max_features=20)
             tfidf_matrix = vectorizer.fit_transform(cluster_texts[cluster_id])
             feature_names = vectorizer.get_feature_names_out()
+
             mean_scores = np.mean(tfidf_matrix.toarray(), axis=0)
             top_indices = mean_scores.argsort()[-8:][::-1]
             top_keywords = [feature_names[i] for i in top_indices]
@@ -83,7 +89,7 @@ class TextProcessor:
             print("Top Keywords:", ", ".join(top_keywords))
             summary_lines.append("- Key Themes: " + ", ".join(top_keywords))
 
-        # Strategic Recommendation
+        # Strategic Insight
         summary_lines.append("\nSTRATEGIC INSIGHT")
         summary_lines.append("-----------------")
 
@@ -104,4 +110,13 @@ class TextProcessor:
 
         print("\n📈 Executive Insight Generated.\n")
 
-        return results, executive_summary
+        # ==============================
+        # Benchmark Metrics
+        # ==============================
+
+        benchmark_data = {
+            "total_reviews": total_reviews,
+            "overall_sentiment": float(overall_sentiment),
+        }
+
+        return results, executive_summary, benchmark_data
