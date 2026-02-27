@@ -1,4 +1,4 @@
-from scripts.test_module import run_test
+from scripts.env_check import run_env_check
 
 if __name__ == "__main__":
-    run_test()
+    run_env_check()
