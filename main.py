@@ -1,6 +1,8 @@
 import os
+from scripts.processor import TextProcessor
+import json
 
-DATA_PATH = "/content/drive/MyDrive/THINK_MVP/02_Customer_Reviews/SCBX_CardX"
+DATA_PATH = "/content/drive/MyDrive/THINK_MVP/ 01_Corporate_Documents/SCBX_CardX/Reviews"
 
 all_texts = []
 
@@ -15,8 +17,6 @@ results = processor.process(all_texts)
 
 for r in results[:5]:
     print(r)
-
-    import json
 
 output_path = "/content/drive/MyDrive/THINK_MVP/04_Analysis_Output/scbx_analysis.json"
 
