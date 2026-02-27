@@ -9,6 +9,7 @@ import pandas as pd
 
 DATA_PATH = "/content/drive/MyDrive/THINK_MVP/01_Corporate_Documents/Krungthai_Bank/Reviews"
 OUTPUT_PATH = "/content/drive/MyDrive/THINK_MVP/04_Analysis_Output/krungthai_analysis.json"
+REPORT_PATH = "/content/drive/MyDrive/THINK_MVP/04_Analysis_Output/krungthai_executive_report.txt"
 
 # =====================================
 # VALIDATE PATH
@@ -82,7 +83,7 @@ if len(all_texts) == 0:
 print("\n🚀 Running Think MVP Pipeline...\n")
 
 processor = TextProcessor()
-results = processor.process(all_texts)
+results, executive_summary = processor.process(all_texts)
 
 # =====================================
 # SAVE OUTPUT
@@ -95,6 +96,13 @@ with open(OUTPUT_PATH, "w", encoding="utf-8") as f:
 
 print("\n✅ Analysis saved to:", OUTPUT_PATH)
 
+
+
+
+with open(REPORT_PATH, "w", encoding="utf-8") as f:
+    f.write(executive_summary)
+
+print("📄 Executive report saved to:", REPORT_PATH)
 # =====================================
 # SHOW SAMPLE RESULTS
 # =====================================
