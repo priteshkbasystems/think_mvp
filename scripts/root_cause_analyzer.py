@@ -1,4 +1,5 @@
 from collections import Counter
+import numbers
 
 
 class RootCauseAnalyzer:
@@ -6,41 +7,51 @@ class RootCauseAnalyzer:
     Enterprise Root Cause Analyzer for customer reviews.
 
     Supports:
-        - Numeric sentiment scores (-0.75, 0.32)
-        - HuggingFace list output [[{'label':..., 'score':...}]]
-        - HuggingFace dict output {'label':..., 'score':...}
-        - Custom probability format {'negative': 0.91}
+        - Python int/float
+        - numpy numeric types
+        - torch tensors
+        - HuggingFace nested list output
+        - HuggingFace dict output
+        - Custom probability format
     """
 
     # --------------------------------------------------
-    # SENTIMENT NORMALIZATION (BULLETPROOF)
+    # SENTIMENT NORMALIZATION (FULLY ROBUST)
     # --------------------------------------------------
     def _extract_score(self, sentiment):
         """
-        Convert any sentiment format into numeric polarity.
+        Convert any sentiment format into signed numeric polarity.
         Always returns float.
         """
 
-        # 1️⃣ Handle HuggingFace nested list format
-        if isinstance(sentiment, list) and len(sentiment) > 0:
+        # 🔹 1. Unwrap deeply nested lists (HF sometimes returns [[{...}]])
+        while isinstance(sentiment, list) and len(sentiment) > 0:
             sentiment = sentiment[0]
 
-        # 2️⃣ Numeric types (int, float, numpy.float)
-        if isinstance(sentiment, (int, float)):
+        # 🔹 2. Torch tensor
+        try:
+            import torch
+            if isinstance(sentiment, torch.Tensor):
+                sentiment = sentiment.item()
+        except Exception:
+            pass
+
+        # 🔹 3. Any numeric type (int, float, numpy.float32, etc.)
+        if isinstance(sentiment, numbers.Number):
             return float(sentiment)
 
-        # 3️⃣ Dictionary formats
+        # 🔹 4. Dictionary formats
         if isinstance(sentiment, dict):
 
-            # HuggingFace standard format
+            # HuggingFace format
             if "label" in sentiment:
                 label = str(sentiment.get("label", "")).upper()
-                score = float(sentiment.get("score", 0))
+                confidence = float(sentiment.get("score", 0))
 
                 if label == "NEGATIVE":
-                    return -score
+                    return -confidence
                 elif label == "POSITIVE":
-                    return score
+                    return confidence
                 else:
                     return 0.0
 
@@ -48,7 +59,10 @@ class RootCauseAnalyzer:
             if "negative" in sentiment:
                 return -float(sentiment.get("negative", 0))
 
-        # 4️⃣ Fallback safe conversion
+            if "positive" in sentiment:
+                return float(sentiment.get("positive", 0))
+
+        # 🔹 5. Final safe fallback
         try:
             return float(sentiment)
         except Exception:
@@ -69,6 +83,9 @@ class RootCauseAnalyzer:
         for text, sentiment in zip(texts, sentiments):
 
             score = self._extract_score(sentiment)
+
+            # Debug safeguard (remove later if stable)
+            # print("DEBUG:", sentiment, "->", score)
 
             if score < 0:
                 negative_count += 1
@@ -107,14 +124,14 @@ class RootCauseAnalyzer:
                     root_causes["Other Complaints"] += 1
 
         # --------------------------------------------------
-        # EXECUTIVE PRINT OUTPUT
+        # EXECUTIVE OUTPUT
         # --------------------------------------------------
         if verbose:
             print("\n🔍 ROOT CAUSE BREAKDOWN:")
 
             if negative_count == 0:
                 print("⚠ No negative reviews detected.")
-                print("   (Sentiment format mismatch or all reviews positive)\n")
+                print("   → Sentiment polarity likely converted upstream.\n")
             else:
                 print(f"Total Negative Reviews: {negative_count}\n")
 
