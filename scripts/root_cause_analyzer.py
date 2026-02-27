@@ -3,35 +3,38 @@ from collections import Counter
 
 class RootCauseAnalyzer:
     """
-    Root Cause Analyzer for negative customer reviews.
+    Enterprise Root Cause Analyzer for customer reviews.
+
     Supports:
-        1. Numeric sentiment scores (e.g., -0.75, 0.21)
-        2. HuggingFace-style dict outputs:
-           {"label": "NEGATIVE", "score": 0.92}
+        - Numeric sentiment scores (-0.75, 0.32)
+        - HuggingFace list output [[{'label':..., 'score':...}]]
+        - HuggingFace dict output {'label':..., 'score':...}
+        - Custom probability format {'negative': 0.91}
     """
 
-    def __init__(self):
-        pass
-
     # --------------------------------------------------
-    # SENTIMENT NORMALIZATION
+    # SENTIMENT NORMALIZATION (BULLETPROOF)
     # --------------------------------------------------
     def _extract_score(self, sentiment):
         """
-        Normalize sentiment into numeric score.
+        Convert any sentiment format into numeric polarity.
         Always returns float.
         """
 
-        # Case 1: Numeric (int, float, numpy.float)
+        # 1️⃣ Handle HuggingFace nested list format
+        if isinstance(sentiment, list) and len(sentiment) > 0:
+            sentiment = sentiment[0]
+
+        # 2️⃣ Numeric types (int, float, numpy.float)
         if isinstance(sentiment, (int, float)):
             return float(sentiment)
 
-        # Case 2: HuggingFace-style dictionary
+        # 3️⃣ Dictionary formats
         if isinstance(sentiment, dict):
 
-            # Standard HF format
+            # HuggingFace standard format
             if "label" in sentiment:
-                label = sentiment.get("label", "").upper()
+                label = str(sentiment.get("label", "")).upper()
                 score = float(sentiment.get("score", 0))
 
                 if label == "NEGATIVE":
@@ -45,7 +48,7 @@ class RootCauseAnalyzer:
             if "negative" in sentiment:
                 return -float(sentiment.get("negative", 0))
 
-        # Fallback
+        # 4️⃣ Fallback safe conversion
         try:
             return float(sentiment)
         except Exception:
@@ -67,7 +70,6 @@ class RootCauseAnalyzer:
 
             score = self._extract_score(sentiment)
 
-            # Only analyze negative sentiment
             if score < 0:
                 negative_count += 1
                 text_lower = text.lower()
@@ -105,14 +107,14 @@ class RootCauseAnalyzer:
                     root_causes["Other Complaints"] += 1
 
         # --------------------------------------------------
-        # PRINT RESULTS
+        # EXECUTIVE PRINT OUTPUT
         # --------------------------------------------------
         if verbose:
             print("\n🔍 ROOT CAUSE BREAKDOWN:")
 
             if negative_count == 0:
                 print("⚠ No negative reviews detected.")
-                print("   (Check sentiment format if unexpected)\n")
+                print("   (Sentiment format mismatch or all reviews positive)\n")
             else:
                 print(f"Total Negative Reviews: {negative_count}\n")
 
@@ -122,6 +124,6 @@ class RootCauseAnalyzer:
 
                 print("\n📊 Root Cause Categories Identified:",
                       len(root_causes))
-                print("-" * 40)
+                print("-" * 45)
 
         return root_causes
