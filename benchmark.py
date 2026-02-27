@@ -4,10 +4,10 @@ from scripts.processor import TextProcessor
 
 
 BANK_PATHS = {
-    "Krungthai Bank": "/content/drive/MyDrive/THINK_MVP/02_Customer_Reviews/KrungthaiBank/Reviews",
-    "Kasikornbank": "/content/drive/MyDrive/THINK_MVP/02_Customer_Reviews/KBank/Reviews",
-    "Bangkok Bank": "/content/drive/MyDrive/THINK_MVP/02_Customer_Reviews/SCB_Pre2022/Reviews",
-    "SCB X": "/content/drive/MyDrive/THINK_MVP/02_Customer_Reviews/SCBX_CardX/Reviews",
+    "Krungthai Bank": "/content/drive/MyDrive/THINK_MVP/01_Corporate_Documents/Krungthai_Bank/Reviews",
+    "Kasikornbank": "/content/drive/MyDrive/THINK_MVP/01_Corporate_Documents/KBank/Reviews",
+    "Bangkok Bank": "/content/drive/MyDrive/THINK_MVP/01_Corporate_Documents/SCB_Pre2022/Reviews",
+    "SCB X": "/content/drive/MyDrive/THINK_MVP/01_Corporate_Documents/SCBX_CardX/Reviews",
 }
 
 OUTPUT_PATH = "/content/drive/MyDrive/THINK_MVP/04_Analysis_Output/bank_benchmark_report.txt"
