@@ -1,10 +1,10 @@
 import os
 import pandas as pd
 from scripts.processor import TextProcessor
-
+from scripts.root_cause_analyzer import RootCauseAnalyzer
 
 BANK_PATHS = {
-      "Krungthai Bank": "/content/drive/MyDrive/THINK_MVP/01_Corporate_Documents/Krungthai_Bank/Reviews",
+    "Krungthai Bank": "/content/drive/MyDrive/THINK_MVP/01_Corporate_Documents/Krungthai_Bank/Reviews",
     "Kasikornbank": "/content/drive/MyDrive/THINK_MVP/01_Corporate_Documents/KBank/Reviews",
     "SCB_Pre2022 Bank": "/content/drive/MyDrive/THINK_MVP/01_Corporate_Documents/SCB_Pre2022/Reviews",
     "SCB X": "/content/drive/MyDrive/THINK_MVP/01_Corporate_Documents/SCBX_CardX/Reviews",
@@ -39,6 +39,7 @@ def risk_label(score):
 
 def main():
     processor = TextProcessor()
+    rca = RootCauseAnalyzer()
     benchmark_results = []
 
     print("\n🏦 Running Cross-Bank Benchmark...\n")
@@ -51,23 +52,38 @@ def main():
 
         texts = load_texts_from_folder(path)
 
-        # =========================
-        # DEBUG BLOCK
-        # =========================
         print(f"\n--- DEBUG: {bank} ---")
-        print("Folder path:", path)
         print("Number of texts:", len(texts))
-        print("Sample reviews:")
-        print(texts[:5])
+        print("Sample reviews:", texts[:3])
         print("----------------------\n")
-        # =========================
 
         if len(texts) == 0:
             print(f"⚠ No reviews found for {bank}")
             continue
 
-        _, _, metrics = processor.process(texts)
+        # =========================
+        # PROCESS TEXT
+        # =========================
+        sentiments, clusters, metrics = processor.process(texts)
 
+        # =========================
+        # ROOT CAUSE ANALYSIS
+        # =========================
+        root_causes = rca.analyze(texts, sentiments)
+
+        total_negative = sum(root_causes.values())
+
+        print("🔍 ROOT CAUSE BREAKDOWN:")
+
+        for cause, count in root_causes.most_common():
+            percentage = (count / total_negative) * 100 if total_negative > 0 else 0
+            print(f"{cause}: {count} ({percentage:.1f}%)")
+
+        print("\n")
+
+        # =========================
+        # STORE BENCHMARK RESULT
+        # =========================
         benchmark_results.append({
             "bank": bank,
             "total_reviews": metrics["total_reviews"],
@@ -75,10 +91,14 @@ def main():
             "risk": risk_label(metrics["overall_sentiment"])
         })
 
-    # Sort by worst sentiment
+    # =========================
+    # SORT BY WORST SENTIMENT
+    # =========================
     benchmark_results.sort(key=lambda x: x["overall_sentiment"])
 
-    # Build Report
+    # =========================
+    # BUILD REPORT
+    # =========================
     lines = []
     lines.append("THAI BANK MOBILE SENTIMENT BENCHMARK")
     lines.append("====================================\n")
