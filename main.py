@@ -1,6 +1,4 @@
-print("🚀 Think MVP is running")
+from scripts.test_module import run_test
 
-x = 10
-y = 20
-
-print("Sum is:", x + y)
+if __name__ == "__main__":
+    run_test()
