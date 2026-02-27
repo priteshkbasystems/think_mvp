@@ -28,3 +28,5 @@ beautifulsoup4==4.12.3
 
 # Testing
 pytest==8.2.0
+
+scikit-learn==1.4.2
