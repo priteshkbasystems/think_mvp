@@ -4,9 +4,10 @@ from scripts.processor import TextProcessor
 
 
 BANK_PATHS = {
+    
     "Krungthai Bank": "/content/drive/MyDrive/THINK_MVP/01_Corporate_Documents/Krungthai_Bank/Reviews",
     "Kasikornbank": "/content/drive/MyDrive/THINK_MVP/01_Corporate_Documents/KBank/Reviews",
-    "Bangkok Bank": "/content/drive/MyDrive/THINK_MVP/01_Corporate_Documents/SCB_Pre2022/Reviews",
+    "SCB_Pre2022 Bank": "/content/drive/MyDrive/THINK_MVP/01_Corporate_Documents/SCB_Pre2022/Reviews",
     "SCB X": "/content/drive/MyDrive/THINK_MVP/01_Corporate_Documents/SCBX_CardX/Reviews",
 }
 
