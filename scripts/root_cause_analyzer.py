@@ -1,18 +1,15 @@
 from collections import Counter
 import numbers
+import os
+from datetime import datetime
 
 
 class RootCauseAnalyzer:
 
     # --------------------------------------------------
-    # SENTIMENT NORMALIZATION (FINAL FIX)
+    # SENTIMENT NORMALIZATION
     # --------------------------------------------------
     def _extract_score(self, sentiment):
-        """
-        Convert any known sentiment format into signed numeric polarity.
-        """
-
-        original = sentiment
 
         # Unwrap nested lists
         while isinstance(sentiment, list) and len(sentiment) > 0:
@@ -26,15 +23,14 @@ class RootCauseAnalyzer:
         except Exception:
             pass
 
-        # Numeric types
+        # Numeric
         if isinstance(sentiment, numbers.Number):
             return float(sentiment)
 
         # Dictionary formats
         if isinstance(sentiment, dict):
 
-            # 🔥 YOUR CUSTOM FORMAT FIX
-            # { "sentiment": "NEGATIVE", "confidence": 0.99 }
+            # Custom pipeline format
             if "sentiment" in sentiment and "confidence" in sentiment:
                 label = str(sentiment.get("sentiment", "")).upper()
                 confidence = float(sentiment.get("confidence", 0))
@@ -43,8 +39,7 @@ class RootCauseAnalyzer:
                     return -confidence
                 elif label == "POSITIVE":
                     return confidence
-                else:
-                    return 0.0
+                return 0.0
 
             # HuggingFace format
             if "label" in sentiment and "score" in sentiment:
@@ -55,8 +50,7 @@ class RootCauseAnalyzer:
                     return -confidence
                 elif label == "POSITIVE":
                     return confidence
-                else:
-                    return 0.0
+                return 0.0
 
             # Probability format
             if "negative" in sentiment:
@@ -69,13 +63,16 @@ class RootCauseAnalyzer:
         try:
             return float(sentiment)
         except Exception:
-            print("⚠ Unknown sentiment format:", original)
             return 0.0
 
     # --------------------------------------------------
     # ROOT CAUSE ANALYSIS
     # --------------------------------------------------
-    def analyze(self, texts, sentiments, verbose=True):
+    def analyze(self, texts, sentiments,
+                bank_name=None,
+                save_to_file=False,
+                output_dir=None,
+                verbose=True):
 
         root_causes = Counter()
         negative_count = 0
@@ -115,23 +112,62 @@ class RootCauseAnalyzer:
                     root_causes["Other Complaints"] += 1
 
         # --------------------------------------------------
-        # PRINT OUTPUT
+        # BUILD REPORT STRING
+        # --------------------------------------------------
+        report_lines = []
+        report_lines.append("🔍 ROOT CAUSE ANALYSIS")
+        report_lines.append("=" * 40)
+
+        if bank_name:
+            report_lines.append(f"Bank: {bank_name}")
+
+        report_lines.append(f"Total Reviews: {len(sentiments)}")
+        report_lines.append(f"Negative Reviews: {negative_count}")
+        report_lines.append("")
+
+        if negative_count == 0:
+            report_lines.append("⚠ No negative reviews detected.")
+        else:
+            for cause, count in root_causes.most_common():
+                percentage = (count / negative_count) * 100
+                report_lines.append(
+                    f"{cause}: {count} ({percentage:.1f}%)"
+                )
+
+        report_lines.append("=" * 40)
+        report_lines.append("")
+
+        final_report = "\n".join(report_lines)
+
+        # --------------------------------------------------
+        # PRINT TO CONSOLE
         # --------------------------------------------------
         if verbose:
+            print("\n" + final_report)
 
-            print("\n🔍 ROOT CAUSE BREAKDOWN:")
-            print(f"Total Reviews: {len(sentiments)}")
-            print(f"Negative Reviews Detected: {negative_count}\n")
+        # --------------------------------------------------
+        # SAVE TO TXT FILE
+        # --------------------------------------------------
+        if save_to_file:
 
-            if negative_count == 0:
-                print("⚠ No negative reviews detected.\n")
+            if output_dir is None:
+                output_dir = "."
+
+            os.makedirs(output_dir, exist_ok=True)
+
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+            if bank_name:
+                filename = f"{bank_name}_root_cause_{timestamp}.txt"
             else:
-                for cause, count in root_causes.most_common():
-                    percentage = (count / negative_count) * 100
-                    print(f"{cause}: {count} ({percentage:.1f}%)")
+                filename = f"root_cause_{timestamp}.txt"
 
-                print("\n📊 Categories Identified:",
-                      len(root_causes))
-                print("-" * 45)
+            filepath = os.path.join(output_dir, filename)
+
+            with open(filepath, "w", encoding="utf-8") as f:
+                f.write(final_report)
+
+            if verbose:
+                print(f"📄 Root cause report saved to: {filepath}")
 
         return root_causes
