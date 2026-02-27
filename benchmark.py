@@ -4,8 +4,7 @@ from scripts.processor import TextProcessor
 
 
 BANK_PATHS = {
-    
-    "Krungthai Bank": "/content/drive/MyDrive/THINK_MVP/01_Corporate_Documents/Krungthai_Bank/Reviews",
+      "Krungthai Bank": "/content/drive/MyDrive/THINK_MVP/01_Corporate_Documents/Krungthai_Bank/Reviews",
     "Kasikornbank": "/content/drive/MyDrive/THINK_MVP/01_Corporate_Documents/KBank/Reviews",
     "SCB_Pre2022 Bank": "/content/drive/MyDrive/THINK_MVP/01_Corporate_Documents/SCB_Pre2022/Reviews",
     "SCB X": "/content/drive/MyDrive/THINK_MVP/01_Corporate_Documents/SCBX_CardX/Reviews",
@@ -46,11 +45,23 @@ def main():
     print("\n🏦 Running Cross-Bank Benchmark...\n")
 
     for bank, path in BANK_PATHS.items():
+
         if not os.path.exists(path):
             print(f"⚠ Folder not found for {bank}")
             continue
 
         texts = load_texts_from_folder(path)
+
+        # =========================
+        # DEBUG BLOCK
+        # =========================
+        print(f"\n--- DEBUG: {bank} ---")
+        print("Folder path:", path)
+        print("Number of texts:", len(texts))
+        print("Sample reviews:")
+        print(texts[:5])
+        print("----------------------\n")
+        # =========================
 
         if len(texts) == 0:
             print(f"⚠ No reviews found for {bank}")
