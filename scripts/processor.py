@@ -15,6 +15,9 @@ class TextProcessor:
 
     def process(self, texts):
 
+        # ==============================
+        # SAFETY CHECK: Empty Input
+        # ==============================
         if len(texts) == 0:
             print("⚠ No texts found. Exiting.")
             return [], "", {
@@ -24,17 +27,25 @@ class TextProcessor:
 
         sentiments = self.sentiment_model.predict_batch(texts)
         embeddings = self.embedding_model.encode(texts)
-        topics = self.topic_model.fit_predict(embeddings)
+
+        # ==============================
+        # SAFE CLUSTERING FIX
+        # ==============================
+        if len(texts) < self.topic_model.model.n_clusters:
+            topics = [0] * len(texts)
+        else:
+            topics = self.topic_model.fit_predict(embeddings)
 
         results = []
         cluster_data = defaultdict(list)
         cluster_texts = defaultdict(list)
 
         for i, (text, sentiment) in enumerate(zip(texts, sentiments)):
-            cluster_id = int(topics[i])
 
+            cluster_id = int(topics[i])
             score = sentiment["score"]
             label = sentiment["label"]
+
             sentiment_value = score if label == "POSITIVE" else -score
 
             results.append({
@@ -48,7 +59,7 @@ class TextProcessor:
             cluster_texts[cluster_id].append(text)
 
         # ==============================
-        # Executive Summary
+        # EXECUTIVE SUMMARY
         # ==============================
 
         total_reviews = len(texts)
@@ -65,6 +76,7 @@ class TextProcessor:
         print("\n📊 Cluster Summary:\n")
 
         for cluster_id, values in cluster_data.items():
+
             avg_sentiment = np.mean(values)
             count = len(values)
             percentage = (count / total_reviews) * 100
@@ -77,19 +89,34 @@ class TextProcessor:
             summary_lines.append(f"- Volume: {count} reviews ({percentage:.1f}%)")
             summary_lines.append(f"- Average Sentiment: {avg_sentiment:.3f}")
 
-            # Keyword Extraction
-            vectorizer = TfidfVectorizer(stop_words="english", max_features=20)
-            tfidf_matrix = vectorizer.fit_transform(cluster_texts[cluster_id])
-            feature_names = vectorizer.get_feature_names_out()
+            # ==============================
+            # SAFE KEYWORD EXTRACTION
+            # ==============================
+            if len(cluster_texts[cluster_id]) >= 2:
+                vectorizer = TfidfVectorizer(
+                    stop_words="english",
+                    max_features=20
+                )
+                tfidf_matrix = vectorizer.fit_transform(
+                    cluster_texts[cluster_id]
+                )
+                feature_names = vectorizer.get_feature_names_out()
 
-            mean_scores = np.mean(tfidf_matrix.toarray(), axis=0)
-            top_indices = mean_scores.argsort()[-8:][::-1]
-            top_keywords = [feature_names[i] for i in top_indices]
+                mean_scores = np.mean(tfidf_matrix.toarray(), axis=0)
+                top_indices = mean_scores.argsort()[-8:][::-1]
+                top_keywords = [feature_names[i] for i in top_indices]
 
-            print("Top Keywords:", ", ".join(top_keywords))
-            summary_lines.append("- Key Themes: " + ", ".join(top_keywords))
+                print("Top Keywords:", ", ".join(top_keywords))
+                summary_lines.append(
+                    "- Key Themes: " + ", ".join(top_keywords)
+                )
+            else:
+                summary_lines.append("- Key Themes: Insufficient data")
 
-        # Strategic Insight
+        # ==============================
+        # STRATEGIC INSIGHT
+        # ==============================
+
         summary_lines.append("\nSTRATEGIC INSIGHT")
         summary_lines.append("-----------------")
 
@@ -111,7 +138,7 @@ class TextProcessor:
         print("\n📈 Executive Insight Generated.\n")
 
         # ==============================
-        # Benchmark Metrics
+        # BENCHMARK METRICS
         # ==============================
 
         benchmark_data = {
