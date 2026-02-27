@@ -7,7 +7,7 @@ import pandas as pd
 # CONFIGURATION
 # =====================================
 
-DATA_PATH = "/content/drive/MyDrive/THINK_MVP/01_Corporate_Documents/Krungthai Bank/Reviews"
+DATA_PATH = "/content/drive/MyDrive/THINK_MVP/01_Corporate_Documents/Krungthai_Bank/Reviews"
 OUTPUT_PATH = "/content/drive/MyDrive/THINK_MVP/04_Analysis_Output/krungthai_analysis.json"
 
 # =====================================
