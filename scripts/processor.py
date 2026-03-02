@@ -13,8 +13,7 @@ class TextProcessor:
         self.embedding_model = EmbeddingModel()
         self.topic_model = TopicModel(n_clusters=2)
 
-    def process(self, texts, ratings=None):
-        # ratings: optional list same len as texts; 1-5 scale, can be None per item
+    def process(self, texts):
 
         # ==============================
         # SAFETY CHECK: Empty Input
@@ -23,12 +22,8 @@ class TextProcessor:
             print("⚠ No texts found. Exiting.")
             return [], "", {
                 "total_reviews": 0,
-                "overall_sentiment": 0.0,
-                "overall_rating": None,
+                "overall_sentiment": 0.0
             }
-
-        if ratings is not None and len(ratings) != len(texts):
-            ratings = None
 
         sentiments = self.sentiment_model.predict_batch(texts)
         embeddings = self.embedding_model.encode(texts)
@@ -42,19 +37,9 @@ class TextProcessor:
         else:
             topics = self.topic_model.fit_predict(embeddings)
 
-        def norm_rating(r):
-            if r is None or (isinstance(r, float) and np.isnan(r)):
-                return None
-            try:
-                x = float(r)
-                return (x - 3.0) / 2.0 if 1 <= x <= 5 else None
-            except (TypeError, ValueError):
-                return None
-
         results = []
         cluster_data = defaultdict(list)
         cluster_texts = defaultdict(list)
-        rating_values = []
 
         for i, (text, sentiment) in enumerate(zip(texts, sentiments)):
 
@@ -64,21 +49,12 @@ class TextProcessor:
 
             sentiment_value = score if label == "POSITIVE" else -score
 
-            row = {
+            results.append({
                 "text": text,
                 "sentiment": label,
                 "confidence": score,
                 "topic_cluster": cluster_id
-            }
-            if ratings is not None:
-                raw = ratings[i] if i < len(ratings) else None
-                n = norm_rating(raw)
-                if raw is not None:
-                    row["rating"] = raw
-                if n is not None:
-                    row["rating_normalized"] = n
-                    rating_values.append(n)
-            results.append(row)
+            })
 
             cluster_data[cluster_id].append(sentiment_value)
             cluster_texts[cluster_id].append(text)
@@ -96,11 +72,7 @@ class TextProcessor:
         summary_lines.append("EXECUTIVE CUSTOMER INTELLIGENCE REPORT")
         summary_lines.append("=====================================\n")
         summary_lines.append(f"Total Reviews Analyzed: {total_reviews}")
-        summary_lines.append(f"Overall Sentiment Score (from text): {overall_sentiment:.3f}")
-        if rating_values:
-            overall_rating = np.mean(rating_values)
-            summary_lines.append(f"Overall Rating Score (from stars, -1 to 1): {overall_rating:.3f}")
-        summary_lines.append("")
+        summary_lines.append(f"Overall Sentiment Score: {overall_sentiment:.3f}\n")
 
         print("\n📊 Cluster Summary:\n")
 
@@ -173,7 +145,6 @@ class TextProcessor:
         benchmark_data = {
             "total_reviews": total_reviews,
             "overall_sentiment": float(overall_sentiment),
-            "overall_rating": float(np.mean(rating_values)) if rating_values else None,
         }
 
         return results, executive_summary, benchmark_data

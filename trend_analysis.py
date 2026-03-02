@@ -45,15 +45,11 @@ def load_reviews_with_dates(folder_path):
             df["review"] = df["review"].astype(str)
             df = df[df["review"].str.strip() != ""]
 
-            has_rating = "Rating" in df.columns
-            if has_rating:
-                df["Rating"] = pd.to_numeric(df["Rating"], errors="coerce")
-
             for _, row in df.iterrows():
-                item = {"year": row["Date"].year, "text": row["review"]}
-                if has_rating and pd.notna(row.get("Rating")):
-                    item["rating"] = row["Rating"]
-                data.append(item)
+                data.append({
+                    "year": row["Date"].year,
+                    "text": row["review"]
+                })
 
     return data
 
@@ -112,12 +108,10 @@ def main():
             print(f"⚠ No valid reviews found for {bank}")
             continue
 
-        # Group by year (texts and optional ratings)
+        # Group by year
         year_groups = defaultdict(list)
-        year_ratings = defaultdict(list)
         for item in data:
             year_groups[item["year"]].append(item["text"])
-            year_ratings[item["year"]].append(item.get("rating"))
 
         year_sentiments = {}
 
@@ -126,9 +120,8 @@ def main():
 
         for year in sorted(year_groups.keys()):
             texts = year_groups[year]
-            ratings = year_ratings[year] if year_ratings[year] and any(r is not None for r in year_ratings[year]) else None
 
-            _, _, metrics = processor.process(texts, ratings=ratings)
+            _, _, metrics = processor.process(texts)
 
             sentiment_score = metrics["overall_sentiment"]
             year_sentiments[year] = sentiment_score
