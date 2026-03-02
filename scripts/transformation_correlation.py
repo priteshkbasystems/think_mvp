@@ -15,10 +15,9 @@ TREND_OUTPUT_PATH = "/content/drive/MyDrive/THINK_MVP/04_Analysis_Output"
 FINAL_OUTPUT_PATH = "/content/drive/MyDrive/THINK_MVP/04_Analysis_Output/transformation_correlation_report.txt"
 
 BANKS = [
-    "Krungthai_Bank",
-    "KBank",
-    "SCB_Pre2022",
-    "Bangkok_Bank"
+"Krungthai Bank"
+"Kasikornbank"
+"SCB_Pre2022 Bank"
 ]
 
 # Transformation keyword groups
@@ -124,38 +123,23 @@ def compute_transformation_scores(bank_path):
 def load_sentiment_trend():
     trend_file = os.path.join(
         TREND_OUTPUT_PATH,
-        "bank_trend_report.txt"
+        "bank_trend_data.json"
     )
+
+    if not os.path.exists(trend_file):
+        print("⚠ Trend JSON not found.")
+        return {}
+
+    with open(trend_file, "r", encoding="utf-8") as f:
+        raw_data = json.load(f)
 
     sentiment_data = {}
 
-    if not os.path.exists(trend_file):
-        print("⚠ Trend file not found.")
-        return sentiment_data
-
-    with open(trend_file, "r", encoding="utf-8") as f:
-        lines = f.readlines()
-
-    current_bank = None
-
-    for line in lines:
-        line = line.strip()
-
-        # Detect bank header
-        if line.startswith("🏦"):
-            current_bank = line.replace("🏦", "").strip()
-            sentiment_data[current_bank] = {}
-            continue
-
-        # Detect year → score pattern
-        if "→" in line and current_bank is not None:
-            try:
-                parts = line.split("→")
-                year = int(parts[0].strip())
-                score = float(parts[1].strip())
-                sentiment_data[current_bank][year] = score
-            except:
-                continue
+    for bank_name, bank_data in raw_data.items():
+        sentiment_data[bank_name] = {
+            int(year): score
+            for year, score in bank_data["yearly_sentiment"].items()
+        }
 
     return sentiment_data
 
