@@ -207,6 +207,9 @@ def main():
 
         sentiment_scores = sentiment_trends.get(bank.replace("_", " "), {})
 
+        print("Transformation Years:", sorted(transformation_scores.keys()))
+        print("Sentiment Years:", sorted(sentiment_scores.keys()))
+
         correlation = compute_correlation(transformation_scores, sentiment_scores)
 
         report_lines.append(f"\n🏦 {bank.replace('_', ' ')}")
