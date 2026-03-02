@@ -15,8 +15,8 @@ TREND_OUTPUT_PATH = "/content/drive/MyDrive/THINK_MVP/04_Analysis_Output"
 FINAL_OUTPUT_PATH = "/content/drive/MyDrive/THINK_MVP/04_Analysis_Output/transformation_correlation_report.txt"
 
 BANKS = [
-"Krungthai Bank"
-"Kasikornbank"
+"Krungthai Bank",
+"Kasikornbank",
 "SCB_Pre2022 Bank"
 ]
 
