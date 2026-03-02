@@ -122,11 +122,15 @@ def compute_transformation_scores(bank_path):
 # ==========================================
 
 def load_sentiment_trend():
-    trend_file = os.path.join(TREND_OUTPUT_PATH, "bank_trend_report.txt")
+    trend_file = os.path.join(
+        TREND_OUTPUT_PATH,
+        "bank_trend_report.txt"
+    )
+
     sentiment_data = {}
 
     if not os.path.exists(trend_file):
-        print("Trend file not found.")
+        print("⚠ Trend file not found.")
         return sentiment_data
 
     with open(trend_file, "r", encoding="utf-8") as f:
@@ -137,15 +141,21 @@ def load_sentiment_trend():
     for line in lines:
         line = line.strip()
 
+        # Detect bank header
         if line.startswith("🏦"):
             current_bank = line.replace("🏦", "").strip()
             sentiment_data[current_bank] = {}
+            continue
 
-        elif "→" in line:
-            parts = line.split("→")
-            year = int(parts[0].strip())
-            score = float(parts[1].strip())
-            sentiment_data[current_bank][year] = score
+        # Detect year → score pattern
+        if "→" in line and current_bank is not None:
+            try:
+                parts = line.split("→")
+                year = int(parts[0].strip())
+                score = float(parts[1].strip())
+                sentiment_data[current_bank][year] = score
+            except:
+                continue
 
     return sentiment_data
 
