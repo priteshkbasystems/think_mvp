@@ -2,7 +2,6 @@ import os
 import re
 import json
 import numpy as np
-from datetime import datetime
 from PyPDF2 import PdfReader
 from scipy.stats import pearsonr
 
@@ -14,13 +13,14 @@ BASE_CORP_PATH = "/content/drive/MyDrive/THINK_MVP/01_Corporate_Documents"
 TREND_OUTPUT_PATH = "/content/drive/MyDrive/THINK_MVP/04_Analysis_Output"
 FINAL_OUTPUT_PATH = "/content/drive/MyDrive/THINK_MVP/04_Analysis_Output/transformation_correlation_report.txt"
 
-BANKS = [
-"Krungthai Bank",
-"Kasikornbank",
-"SCB_Pre2022 Bank"
-]
+# 🔥 Display Name → Folder Name mapping
+BANK_CONFIG = {
+    "Krungthai Bank": "Krungthai_Bank",
+    "Kasikornbank": "KBank",
+    "SCB_Pre2022 Bank": "SCB_Pre2022"
+}
 
-# Transformation keyword groups
+# Transformation keywords
 TRANSFORMATION_KEYWORDS = [
     "digital",
     "mobile",
@@ -53,22 +53,19 @@ def extract_text_from_pdf(pdf_path):
         return ""
 
 # ==========================================
-# YEAR EXTRACTION FROM FILENAME
+# YEAR EXTRACTION
 # ==========================================
 
 def extract_year_from_filename(filename):
     match = re.search(r"(20\d{2})", filename)
-    if match:
-        return int(match.group(1))
-    return None
+    return int(match.group(1)) if match else None
 
 # ==========================================
-# COMPUTE TRANSFORMATION INTENSITY
+# TRANSFORMATION INTENSITY
 # ==========================================
-
-import re
 
 def compute_transformation_scores(bank_path):
+
     annual_path = os.path.join(bank_path, "Annual_Reports")
     scores = {}
 
@@ -77,37 +74,36 @@ def compute_transformation_scores(bank_path):
         return scores
 
     for file in os.listdir(annual_path):
-        if file.endswith(".pdf"):
-            year = extract_year_from_filename(file)
-            if not year:
-                continue
 
-            full_path = os.path.join(annual_path, file)
-            text = extract_text_from_pdf(full_path)
+        if not file.endswith(".pdf"):
+            continue
 
-            if not text:
-                continue
+        year = extract_year_from_filename(file)
+        if not year:
+            continue
 
-            # Clean and tokenize
-            words = re.findall(r"\b\w+\b", text.lower())
-            total_words = len(words)
+        full_path = os.path.join(annual_path, file)
+        text = extract_text_from_pdf(full_path)
 
-            if total_words == 0:
-                continue
+        if not text:
+            continue
 
-            keyword_count = 0
+        words = re.findall(r"\b\w+\b", text)
+        total_words = len(words)
 
-            for keyword in TRANSFORMATION_KEYWORDS:
-                pattern = r"\b" + re.escape(keyword.lower()) + r"\b"
-                matches = re.findall(pattern, text.lower())
-                keyword_count += len(matches)
+        if total_words == 0:
+            continue
 
-            # Normalized intensity score
-            intensity_score = keyword_count / total_words
+        keyword_count = 0
 
-            scores[year] = intensity_score
+        for keyword in TRANSFORMATION_KEYWORDS:
+            pattern = r"\b" + re.escape(keyword.lower()) + r"\b"
+            keyword_count += len(re.findall(pattern, text))
 
-    # Normalize between 0 and 1 (relative strength per bank)
+        intensity_score = keyword_count / total_words
+        scores[year] = intensity_score
+
+    # Normalize per bank
     if scores:
         max_val = max(scores.values())
         if max_val > 0:
@@ -117,10 +113,11 @@ def compute_transformation_scores(bank_path):
     return scores
 
 # ==========================================
-# LOAD SENTIMENT TREND FROM REPORT FILE
+# LOAD SENTIMENT TREND (JSON)
 # ==========================================
 
 def load_sentiment_trend():
+
     trend_file = os.path.join(
         TREND_OUTPUT_PATH,
         "bank_trend_data.json"
@@ -144,22 +141,27 @@ def load_sentiment_trend():
     return sentiment_data
 
 # ==========================================
-# CORRELATION ANALYSIS
+# CORRELATION
 # ==========================================
 
 def compute_correlation(transformation_scores, sentiment_scores):
-    years = sorted(set(transformation_scores.keys()) & set(sentiment_scores.keys()))
 
-    if len(years) < 2:
+    overlapping_years = sorted(
+        set(transformation_scores.keys()) &
+        set(year - 1 for year in sentiment_scores.keys())
+    )
+
+    if len(overlapping_years) < 2:
         return None
 
     x = []
     y = []
 
-    for year in years:
-        if (year + 1) in sentiment_scores:
+    for year in overlapping_years:
+        next_year = year + 1
+        if next_year in sentiment_scores:
             x.append(transformation_scores[year])
-            y.append(sentiment_scores[year + 1])
+            y.append(sentiment_scores[next_year])
 
     if len(x) < 2:
         return None
@@ -168,7 +170,7 @@ def compute_correlation(transformation_scores, sentiment_scores):
     return correlation
 
 # ==========================================
-# MAIN EXECUTION
+# MAIN
 # ==========================================
 
 def main():
@@ -181,28 +183,29 @@ def main():
     report_lines.append("TRANSFORMATION IMPACT CORRELATION REPORT")
     report_lines.append("=========================================\n")
 
-    for bank in BANKS:
+    for display_name, folder_name in BANK_CONFIG.items():
 
-        print(f"Analyzing {bank}...")
+        print(f"Analyzing {display_name}...")
 
-        bank_path = os.path.join(BASE_CORP_PATH, bank)
+        bank_path = os.path.join(BASE_CORP_PATH, folder_name)
 
         transformation_scores = compute_transformation_scores(bank_path)
-
-        sentiment_scores = sentiment_trends.get(bank.replace("_", " "), {})
+        sentiment_scores = sentiment_trends.get(display_name, {})
 
         print("Transformation Years:", sorted(transformation_scores.keys()))
         print("Sentiment Years:", sorted(sentiment_scores.keys()))
 
         correlation = compute_correlation(transformation_scores, sentiment_scores)
 
-        report_lines.append(f"\n🏦 {bank.replace('_', ' ')}")
+        report_lines.append(f"\n🏦 {display_name}")
 
         if correlation is None:
             report_lines.append("Insufficient data for correlation.")
             continue
 
-        report_lines.append(f"Correlation (Transformation → Next Year Sentiment): {correlation:.3f}")
+        report_lines.append(
+            f"Correlation (Transformation → Next Year Sentiment): {correlation:.3f}"
+        )
 
         if correlation > 0.7:
             impact = "High Positive Impact"
@@ -222,6 +225,7 @@ def main():
 
     print("\n📄 Report saved to:", FINAL_OUTPUT_PATH)
     print("\n" + final_report)
+
 
 if __name__ == "__main__":
     main()
