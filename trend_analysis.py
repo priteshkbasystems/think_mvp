@@ -13,6 +13,10 @@ BASE_CORP_PATH = "/content/drive/MyDrive/THINK_MVP/01_Corporate_Documents"
 OUTPUT_PATH = "/content/drive/MyDrive/THINK_MVP/04_Analysis_Output/bank_trend_report.txt"
 JSON_OUTPUT_PATH = "/content/drive/MyDrive/THINK_MVP/04_Analysis_Output/bank_trend_data.json"
 
+TEXT_WEIGHT = 0.7
+RATING_WEIGHT = 0.3
+CONTRADICTION_THRESHOLD = 0.8
+
 
 # ==========================================
 # AUTO DISCOVER BANKS
@@ -33,6 +37,14 @@ def discover_review_folders(base_path):
             banks[bank_folder.replace("_", " ")] = reviews_path
 
     return banks
+
+
+# ==========================================
+# NORMALIZE STAR RATING (1–5 → -1 to +1)
+# ==========================================
+
+def normalize_rating(star_rating):
+    return (star_rating - 3) / 2
 
 
 # ==========================================
@@ -60,13 +72,42 @@ def load_reviews_with_dates(folder_path):
             df["review"] = df["review"].astype(str)
             df = df[df["review"].str.strip() != ""]
 
+            # Rating optional but recommended
+            if "Rating" in df.columns:
+                df["Rating"] = pd.to_numeric(df["Rating"], errors="coerce")
+            else:
+                df["Rating"] = None
+
             for _, row in df.iterrows():
                 data.append({
                     "year": int(row["Date"].year),
-                    "text": row["review"]
+                    "text": row["review"],
+                    "rating": row["Rating"]
                 })
 
     return data
+
+
+# ==========================================
+# FUSION LOGIC
+# ==========================================
+
+def fuse_sentiment(text_score, rating):
+
+    if rating is None or pd.isna(rating):
+        return text_score, False  # no contradiction
+
+    normalized_rating = normalize_rating(rating)
+
+    final_sentiment = (
+        TEXT_WEIGHT * text_score +
+        RATING_WEIGHT * normalized_rating
+    )
+
+    difference = abs(text_score - normalized_rating)
+    contradiction = difference > CONTRADICTION_THRESHOLD
+
+    return final_sentiment, contradiction
 
 
 # ==========================================
@@ -105,8 +146,8 @@ def main():
     banks = discover_review_folders(BASE_CORP_PATH)
 
     report_lines = []
-    report_lines.append("THAI BANK SENTIMENT TREND REPORT")
-    report_lines.append("=================================\n")
+    report_lines.append("THAI BANK SENTIMENT TREND REPORT (TEXT + STAR FUSION)")
+    report_lines.append("=====================================================\n")
 
     trend_results = {}
 
@@ -114,59 +155,77 @@ def main():
 
     for bank, path in banks.items():
 
-        if not os.path.exists(path):
-            continue
-
         data = load_reviews_with_dates(path)
 
         if len(data) == 0:
-            print(f"⚠ No valid reviews found for {bank}")
             continue
 
         year_groups = defaultdict(list)
         for item in data:
-            year_groups[item["year"]].append(item["text"])
+            year_groups[item["year"]].append(item)
 
         year_sentiments = {}
+        yearly_contradictions = {}
 
         print(f"\n🏦 {bank}")
         print("----------------------------")
 
         for year in sorted(year_groups.keys()):
-            texts = year_groups[year]
+
+            items = year_groups[year]
+            texts = [x["text"] for x in items]
 
             try:
                 _, _, metrics = processor.process(texts)
-                sentiment_score = float(metrics["overall_sentiment"])
+                text_score = float(metrics["overall_sentiment"])
             except Exception:
-                sentiment_score = 0.0
+                text_score = 0.0
 
-            year_sentiments[year] = sentiment_score
+            # Apply fusion per review
+            fused_scores = []
+            contradiction_count = 0
 
-            print(f"{year} → {sentiment_score:.3f}")
+            for item in items:
+                final_score, contradiction = fuse_sentiment(
+                    text_score,
+                    item["rating"]
+                )
+                fused_scores.append(final_score)
+
+                if contradiction:
+                    contradiction_count += 1
+
+            yearly_score = sum(fused_scores) / len(fused_scores)
+            contradiction_ratio = contradiction_count / len(items)
+
+            year_sentiments[year] = yearly_score
+            yearly_contradictions[year] = contradiction_ratio
+
+            print(f"{year} → {yearly_score:.3f} | Contradiction Rate: {contradiction_ratio:.2%}")
 
         trend_direction = detect_trend(year_sentiments)
 
-        print(f"Trend: {trend_direction}")
-
         trend_results[bank] = {
             "yearly_sentiment": year_sentiments,
-            "trend_direction": trend_direction
+            "trend_direction": trend_direction,
+            "yearly_contradiction_ratio": yearly_contradictions
         }
 
         report_lines.append(f"\n{bank}")
         report_lines.append("----------------------------")
 
         for year in sorted(year_sentiments.keys()):
-            report_lines.append(f"{year} → {year_sentiments[year]:.3f}")
+            report_lines.append(
+                f"{year} → {year_sentiments[year]:.3f} "
+                f"(Contradiction: {yearly_contradictions[year]:.2%})"
+            )
 
         report_lines.append(f"Trend: {trend_direction}\n")
 
-    # Save Text Report
+    # Save reports
     with open(OUTPUT_PATH, "w", encoding="utf-8") as f:
         f.write("\n".join(report_lines))
 
-    # Save JSON for Correlation Engine
     with open(JSON_OUTPUT_PATH, "w", encoding="utf-8") as f:
         json.dump(trend_results, f, indent=4)
 
