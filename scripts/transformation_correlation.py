@@ -4,7 +4,7 @@ import json
 import numpy as np
 from PyPDF2 import PdfReader
 from scipy.stats import pearsonr
-from scripts.trend_analysis import main as run_trend_engine
+from trend_analysis import main as run_trend_engine
 
 from scripts.db_cache import (
     init_db,
