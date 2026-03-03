@@ -66,8 +66,8 @@ def discover_banks(base_path):
             if sub.lower() == "annual_reports":
                 components["annual_reports"] = sub_path
 
-            elif sub.lower() == "investor_presentations":
-                components["investor_presentations"] = sub_path
+            elif sub.lower() == "Investor_Presentations":
+                components["Investor_Presentations"] = sub_path
 
         banks[bank_folder] = components
 
