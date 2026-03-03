@@ -222,62 +222,7 @@ def compute_correlation(transformation_scores, sentiment_scores):
 
     correlation, _ = pearsonr(x, y)
     return correlation
-# ==========================================
-# INTERPRET CORRELATION
-# ==========================================
-def interpret_correlation(value, timing):
 
-    if value is None:
-        return "Insufficient data to determine the relationship."
-
-    abs_val = abs(value)
-
-    if abs_val >= 0.7:
-        strength = "strong"
-    elif abs_val >= 0.4:
-        strength = "moderate"
-    elif abs_val >= 0.2:
-        strength = "weak"
-    else:
-        strength = "very weak"
-
-    if value > 0:
-        direction = "positive"
-    else:
-        direction = "inverse"
-
-    if timing == "same":
-        time_text = "in the same year"
-    else:
-        time_text = "in the following year"
-
-    explanation = (
-        f"There is a {strength} {direction} relationship between customer sentiment "
-        f"and stock performance {time_text}. "
-    )
-
-    # Business meaning
-    if value > 0 and timing == "next":
-        explanation += (
-            "This suggests that improvements in customer perception may contribute "
-            "to stronger future market performance."
-        )
-    elif value < 0 and timing == "same":
-        explanation += (
-            "This may indicate that short-term market movements are driven by "
-            "factors beyond customer perception."
-        )
-    elif value < 0:
-        explanation += (
-            "This suggests that higher sentiment does not immediately translate "
-            "into stronger stock returns."
-        )
-    else:
-        explanation += (
-            "This indicates alignment between customer perception and investor response."
-        )
-
-    return explanation
 # ==========================================
 # MAIN
 # ==========================================
