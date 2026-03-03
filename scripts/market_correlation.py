@@ -38,7 +38,7 @@ def load_sentiment_data():
 
 
 # ==========================================
-# AUTO DISCOVER ALL BANKS + STOCK FILES
+# DISCOVER ALL BANKS
 # ==========================================
 
 def discover_all_banks(base_path):
@@ -67,7 +67,7 @@ def discover_all_banks(base_path):
 
 
 # ==========================================
-# CLEAN STOCK DATA & CALCULATE YEARLY RETURN
+# CALCULATE YEARLY RETURNS
 # ==========================================
 
 def compute_yearly_returns(csv_path):
@@ -104,42 +104,37 @@ def compute_yearly_returns(csv_path):
 
 
 # ==========================================
-# CORRELATION
+# CORRELATION + YEAR ALIGNMENT
 # ==========================================
 
 def compute_correlation(sentiment_dict, return_dict, lag=0):
 
-    common_years = sorted(
-        set(sentiment_dict.keys()) &
-        set(y - lag for y in return_dict.keys())
-    )
+    aligned_data = []
 
-    if len(common_years) < 2:
-        return None
+    for year in sentiment_dict:
+        target_year = year + lag
 
-    x = []
-    y = []
+        if target_year in return_dict:
+            aligned_data.append(
+                (year, sentiment_dict[year], return_dict[target_year])
+            )
 
-    for year in common_years:
-        if (year + lag) in return_dict:
-            x.append(sentiment_dict[year])
-            y.append(return_dict[year + lag])
+    if len(aligned_data) < 2:
+        return None, []
 
-    if len(x) < 2:
-        return None
+    x = [item[1] for item in aligned_data]
+    y = [item[2] for item in aligned_data]
 
     corr, _ = pearsonr(x, y)
-    return corr
+
+    return corr, aligned_data
 
 
 # ==========================================
-# INTERPRETATION FUNCTION
+# INTERPRETATION
 # ==========================================
 
 def interpret_correlation(value, timing):
-
-    if value is None:
-        return "Insufficient overlapping historical data to determine statistical relationship."
 
     abs_val = abs(value)
 
@@ -166,22 +161,13 @@ def interpret_correlation(value, timing):
 
     if value > 0 and timing == "next":
         explanation += (
-            "This suggests that improved customer perception may contribute "
-            "to stronger future market performance."
-        )
-    elif value < 0 and timing == "same":
-        explanation += (
-            "This indicates that short-term market performance may be driven "
-            "by macroeconomic or structural factors rather than customer sentiment."
+            "This suggests that improvements in customer perception may precede "
+            "stronger market performance."
         )
     elif value < 0:
         explanation += (
-            "This suggests that positive sentiment does not necessarily translate "
-            "into improved stock returns."
-        )
-    else:
-        explanation += (
-            "This indicates alignment between customer perception and investor response."
+            "This indicates that market performance may be influenced more by "
+            "external macroeconomic or structural factors."
         )
 
     return explanation
@@ -204,42 +190,69 @@ def main():
 
     for bank, stock_path in banks.items():
 
-        print(f"Analyzing {bank}...")
+        report_lines.append(f"\n🏦 {bank}")
 
         sentiment_dict = sentiment_data.get(bank)
-
-        report_lines.append(f"\n🏦 {bank}")
 
         if sentiment_dict is None:
             report_lines.append("Sentiment data not available.")
             continue
 
         if not stock_path:
-            report_lines.append("Stock price data not found.")
+            report_lines.append("Stock price data not available.")
             continue
 
         yearly_returns = compute_yearly_returns(stock_path)
 
-        same_year_corr = compute_correlation(sentiment_dict, yearly_returns, lag=0)
-        next_year_corr = compute_correlation(sentiment_dict, yearly_returns, lag=1)
-
         # SAME YEAR
-        if same_year_corr is not None:
+        same_corr, same_data = compute_correlation(
+            sentiment_dict,
+            yearly_returns,
+            lag=0
+        )
+
+        if same_corr is not None:
             report_lines.append(
-                f"Sentiment → Same Year Stock Return Correlation: {same_year_corr:.3f}"
+                f"\nSame Year Correlation: {same_corr:.3f}"
             )
-            report_lines.append(interpret_correlation(same_year_corr, "same"))
+
+            report_lines.append("Years Analyzed:")
+
+            for year, sent, ret in same_data:
+                report_lines.append(
+                    f"  {year} → Sentiment: {sent:.3f} | Return: {ret:.3f}"
+                )
+
+            report_lines.append(
+                interpret_correlation(same_corr, "same")
+            )
         else:
-            report_lines.append("Sentiment → Same Year: Insufficient Data")
+            report_lines.append("\nSame Year: Insufficient overlapping data.")
 
         # NEXT YEAR
-        if next_year_corr is not None:
+        next_corr, next_data = compute_correlation(
+            sentiment_dict,
+            yearly_returns,
+            lag=1
+        )
+
+        if next_corr is not None:
             report_lines.append(
-                f"Sentiment → Next Year Stock Return Correlation: {next_year_corr:.3f}"
+                f"\nNext Year Correlation: {next_corr:.3f}"
             )
-            report_lines.append(interpret_correlation(next_year_corr, "next"))
+
+            report_lines.append("Years Analyzed (Sentiment → Following Year Return):")
+
+            for year, sent, ret in next_data:
+                report_lines.append(
+                    f"  {year} → Sentiment: {sent:.3f} | {year+1} Return: {ret:.3f}"
+                )
+
+            report_lines.append(
+                interpret_correlation(next_corr, "next")
+            )
         else:
-            report_lines.append("Sentiment → Next Year: Insufficient Data")
+            report_lines.append("\nNext Year: Insufficient overlapping data.")
 
         report_lines.append("")
 
