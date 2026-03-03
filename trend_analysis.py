@@ -5,23 +5,39 @@ from collections import defaultdict
 from scripts.processor import TextProcessor
 
 
-# ==============================
+# ==========================================
 # CONFIG
-# ==============================
+# ==========================================
 
-BANK_PATHS = {
-    "Krungthai Bank": "/content/drive/MyDrive/THINK_MVP/01_Corporate_Documents/Krungthai_Bank/Reviews",
-    "Kasikornbank": "/content/drive/MyDrive/THINK_MVP/01_Corporate_Documents/KBank/Reviews",
-    "SCB_Pre2022 Bank": "/content/drive/MyDrive/THINK_MVP/01_Corporate_Documents/SCB_Pre2022/Reviews",
-}
-
+BASE_CORP_PATH = "/content/drive/MyDrive/THINK_MVP/01_Corporate_Documents"
 OUTPUT_PATH = "/content/drive/MyDrive/THINK_MVP/04_Analysis_Output/bank_trend_report.txt"
 JSON_OUTPUT_PATH = "/content/drive/MyDrive/THINK_MVP/04_Analysis_Output/bank_trend_data.json"
 
 
-# ==============================
+# ==========================================
+# AUTO DISCOVER BANKS
+# ==========================================
+
+def discover_review_folders(base_path):
+    banks = {}
+
+    for bank_folder in os.listdir(base_path):
+        bank_path = os.path.join(base_path, bank_folder)
+
+        if not os.path.isdir(bank_path):
+            continue
+
+        reviews_path = os.path.join(bank_path, "Reviews")
+
+        if os.path.exists(reviews_path):
+            banks[bank_folder.replace("_", " ")] = reviews_path
+
+    return banks
+
+
+# ==========================================
 # LOAD REVIEWS
-# ==============================
+# ==========================================
 
 def load_reviews_with_dates(folder_path):
     data = []
@@ -53,9 +69,9 @@ def load_reviews_with_dates(folder_path):
     return data
 
 
-# ==============================
+# ==========================================
 # TREND DETECTION
-# ==============================
+# ==========================================
 
 def detect_trend(year_sentiments):
     years = sorted(year_sentiments.keys())
@@ -64,9 +80,9 @@ def detect_trend(year_sentiments):
     if len(values) < 2:
         return "Insufficient Data"
 
-    total_change = 0
-    for i in range(1, len(values)):
-        total_change += values[i] - values[i - 1]
+    total_change = sum(
+        values[i] - values[i - 1] for i in range(1, len(values))
+    )
 
     avg_change = total_change / (len(values) - 1)
     threshold = 0.01
@@ -79,26 +95,26 @@ def detect_trend(year_sentiments):
         return "Stable"
 
 
-# ==============================
+# ==========================================
 # MAIN ENGINE
-# ==============================
+# ==========================================
 
 def main():
 
     processor = TextProcessor()
+    banks = discover_review_folders(BASE_CORP_PATH)
 
     report_lines = []
     report_lines.append("THAI BANK SENTIMENT TREND REPORT")
     report_lines.append("=================================\n")
 
-    trend_results = {}  # <-- structured storage for JSON
+    trend_results = {}
 
     print("\n📈 Running Yearly Sentiment Trend Engine...\n")
 
-    for bank, path in BANK_PATHS.items():
+    for bank, path in banks.items():
 
         if not os.path.exists(path):
-            print(f"⚠ Folder not found for {bank}")
             continue
 
         data = load_reviews_with_dates(path)
@@ -119,10 +135,13 @@ def main():
         for year in sorted(year_groups.keys()):
             texts = year_groups[year]
 
-            _, _, metrics = processor.process(texts)
+            try:
+                _, _, metrics = processor.process(texts)
+                sentiment_score = float(metrics["overall_sentiment"])
+            except Exception:
+                sentiment_score = 0.0
 
-            sentiment_score = metrics["overall_sentiment"]
-            year_sentiments[year] = float(sentiment_score)
+            year_sentiments[year] = sentiment_score
 
             print(f"{year} → {sentiment_score:.3f}")
 
@@ -130,13 +149,11 @@ def main():
 
         print(f"Trend: {trend_direction}")
 
-        # Store structured data for correlation engine
         trend_results[bank] = {
             "yearly_sentiment": year_sentiments,
             "trend_direction": trend_direction
         }
 
-        # Text report
         report_lines.append(f"\n{bank}")
         report_lines.append("----------------------------")
 
@@ -146,12 +163,10 @@ def main():
         report_lines.append(f"Trend: {trend_direction}\n")
 
     # Save Text Report
-    report_text = "\n".join(report_lines)
-
     with open(OUTPUT_PATH, "w", encoding="utf-8") as f:
-        f.write(report_text)
+        f.write("\n".join(report_lines))
 
-    # Save Structured JSON for Correlation Engine
+    # Save JSON for Correlation Engine
     with open(JSON_OUTPUT_PATH, "w", encoding="utf-8") as f:
         json.dump(trend_results, f, indent=4)
 
