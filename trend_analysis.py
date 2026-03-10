@@ -6,7 +6,7 @@ from collections import defaultdict
 from scripts.processor import TextProcessor
 from scripts.utils.sentiment_utils import sentiment_label
 from scripts.db_cache import save_sentiment_score
-
+from scripts.db_cache import save_review_sentiment
 
 # ==========================================
 # CONFIG
@@ -229,6 +229,15 @@ def main():
                     item["rating"]
                 )
 
+                label = sentiment_label(final_score)
+                save_review_sentiment(
+                    bank,
+                    year,
+                    item["text"],
+                    item["rating"],
+                    final_score,
+                    label
+                )
                 fused_scores.append(final_score)
 
                 if contradiction:

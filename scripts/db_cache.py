@@ -73,6 +73,21 @@ def init_db():
         )
     """)
 
+    # ------------------------------
+    # Review sentiments
+    # ------------------------------
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS review_sentiments (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            bank_name TEXT,
+            year INTEGER,
+            review_text TEXT,
+            rating REAL,
+            sentiment_score REAL,
+            sentiment_label TEXT
+        )
+    """)
+
     conn.commit()
     conn.close()
 
@@ -235,6 +250,24 @@ def save_sentiment_score(bank, year, sentiment, contradiction):
         (bank_name, year, sentiment, contradiction_ratio)
         VALUES (?, ?, ?, ?)
     """, (bank, year, sentiment, contradiction))
+
+    conn.commit()
+    conn.close()
+
+# ==========================================
+# REVIEW SENTIMENT CACHE
+# ==========================================
+
+def save_review_sentiment(bank, year, text, rating, score, label):
+
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+
+    cursor.execute("""
+        INSERT INTO review_sentiments
+        (bank_name, year, review_text, rating, sentiment_score, sentiment_label)
+        VALUES (?, ?, ?, ?, ?, ?)
+    """, (bank, year, text, rating, score, label))
 
     conn.commit()
     conn.close()
