@@ -59,6 +59,20 @@ def init_db():
         )
     """)
 
+
+    # ------------------------------
+    # Sentiment scores
+    # ------------------------------
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS sentiment_scores (
+            bank_name TEXT,
+            year INTEGER,
+            sentiment REAL,
+            contradiction_ratio REAL,
+            PRIMARY KEY (bank_name, year)
+        )
+    """)
+
     conn.commit()
     conn.close()
 
@@ -210,3 +224,17 @@ def get_stock_returns(bank_name):
     conn.close()
 
     return rows
+
+def save_sentiment_score(bank, year, sentiment, contradiction):
+
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+
+    cursor.execute("""
+        INSERT OR REPLACE INTO sentiment_scores
+        (bank_name, year, sentiment, contradiction_ratio)
+        VALUES (?, ?, ?, ?)
+    """, (bank, year, sentiment, contradiction))
+
+    conn.commit()
+    conn.close()

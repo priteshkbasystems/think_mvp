@@ -5,6 +5,7 @@ from collections import defaultdict
 
 from scripts.processor import TextProcessor
 from scripts.utils.sentiment_utils import sentiment_label
+from scripts.db_cache import save_sentiment_score
 
 
 # ==========================================
@@ -45,9 +46,7 @@ def discover_review_folders(base_path):
         reviews_path = os.path.join(bank_path, "Reviews")
 
         if os.path.exists(reviews_path):
-
             display_name = bank_folder.replace("_", " ")
-
             banks[display_name] = reviews_path
 
     return banks
@@ -84,7 +83,6 @@ def load_reviews_with_dates(folder_path):
             print("⚠ Unable to open file:", e)
             continue
 
-        # Loop through ALL sheets
         for sheet in xls.sheet_names:
 
             try:
@@ -213,7 +211,6 @@ def main():
         for year in sorted(year_groups.keys()):
 
             items = year_groups[year]
-
             texts = [x["text"] for x in items]
 
             try:
@@ -245,6 +242,14 @@ def main():
 
             year_sentiments[year] = yearly_score
             yearly_contradictions[year] = contradiction_ratio
+
+            # SAVE TO SQLITE
+            save_sentiment_score(
+                bank,
+                year,
+                yearly_score,
+                contradiction_ratio
+            )
 
             label = sentiment_label(yearly_score)
 
