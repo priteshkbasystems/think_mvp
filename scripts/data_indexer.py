@@ -93,7 +93,7 @@ def compute_yearly_returns(file_path):
         print("⚠ No valid sheet with Date/Price found.")
         return {}
 
-    df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
+    df["Date"] = pd.to_datetime(df["Date"], errors="coerce", dayfirst=True)
     df = df.dropna(subset=["Date"])
 
     df["Price"] = (

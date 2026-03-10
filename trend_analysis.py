@@ -96,7 +96,7 @@ def load_reviews_with_dates(folder_path):
                 print("   ⚠ Required columns missing. Skipping sheet.")
                 continue
 
-            df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
+            df["Date"] = pd.to_datetime(df["Date"], errors="coerce", dayfirst=True)
             df = df.dropna(subset=["Date"])
 
             df["review"] = df["review"].astype(str)
