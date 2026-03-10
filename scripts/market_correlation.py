@@ -3,7 +3,8 @@ import json
 import pandas as pd
 import numpy as np
 from scipy.stats import pearsonr
-
+from PyPDF2 import PdfReader
+import re
 
 # ==========================================
 # CONFIG
@@ -11,166 +12,199 @@ from scipy.stats import pearsonr
 
 BASE_CORP_PATH = "/content/drive/MyDrive/THINK_MVP/01_Corporate_Documents"
 TREND_JSON_PATH = "/content/drive/MyDrive/THINK_MVP/04_Analysis_Output/bank_trend_data.json"
-OUTPUT_PATH = "/content/drive/MyDrive/THINK_MVP/04_Analysis_Output/market_correlation_report.txt"
+OUTPUT_PATH = "/content/drive/MyDrive/THINK_MVP/04_Analysis_Output/strategic_market_intelligence_report.txt"
 
+TRANSFORMATION_KEYWORDS = [
+    "digital","mobile","platform","ecosystem",
+    "ai","automation","analytics",
+    "customer experience","innovation",
+    "technology","upgrade"
+]
 
 # ==========================================
-# LOAD SENTIMENT DATA
+# LOAD SENTIMENT
 # ==========================================
 
 def load_sentiment_data():
+
     if not os.path.exists(TREND_JSON_PATH):
-        print("⚠ Sentiment JSON not found.")
         return {}
 
-    with open(TREND_JSON_PATH, "r") as f:
-        raw = json.load(f)
+    with open(TREND_JSON_PATH,"r") as f:
+        raw=json.load(f)
 
-    sentiment_data = {}
+    sentiment_data={}
 
-    for bank, data in raw.items():
-        sentiment_data[bank] = {
-            int(year): score
-            for year, score in data["yearly_sentiment"].items()
+    for bank,data in raw.items():
+
+        sentiment_data[bank]={
+            int(year):score
+            for year,score in data["yearly_sentiment"].items()
         }
 
     return sentiment_data
 
 
 # ==========================================
-# DISCOVER ALL BANKS
+# DISCOVER BANKS
 # ==========================================
 
-def discover_all_banks(base_path):
+def discover_banks(base_path):
 
-    banks = {}
+    banks={}
 
     for bank_folder in os.listdir(base_path):
-        bank_path = os.path.join(base_path, bank_folder)
+
+        bank_path=os.path.join(base_path,bank_folder)
 
         if not os.path.isdir(bank_path):
             continue
 
-        display_name = bank_folder.replace("_", " ")
-        stock_path = os.path.join(bank_path, "stock_price")
+        display_name=bank_folder.replace("_"," ")
 
-        stock_file = None
+        stock_path=os.path.join(bank_path,"stock_price")
+
+        annual_path=None
+
+        for sub in os.listdir(bank_path):
+
+            sub_path=os.path.join(bank_path,sub)
+
+            if not os.path.isdir(sub_path):
+                continue
+
+            if sub.lower()=="annual_reports":
+                annual_path=sub_path
+
+        stock_file=None
 
         if os.path.exists(stock_path):
-            for file in os.listdir(stock_path):
-                if file.endswith(".csv"):
-                    stock_file = os.path.join(stock_path, file)
 
-        banks[display_name] = stock_file
+            for file in os.listdir(stock_path):
+
+                if file.endswith(".xlsx"):
+                    stock_file=os.path.join(stock_path,file)
+
+        banks[display_name]={
+            "stock":stock_file,
+            "annual":annual_path
+        }
 
     return banks
 
 
 # ==========================================
-# CALCULATE YEARLY RETURNS
+# STOCK RETURNS
 # ==========================================
 
 def compute_yearly_returns(csv_path):
 
-    df = pd.read_csv(csv_path)
+    df=pd.read_csv(csv_path)
 
-    df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
-    df = df.dropna(subset=["Date"])
+    df["Date"]=pd.to_datetime(df["Date"],errors="coerce")
 
-    df["Price"] = (
-        df["Price"]
-        .astype(str)
-        .str.replace(",", "", regex=False)
-        .astype(float)
-    )
+    df=df.dropna(subset=["Date"])
 
-    df["Year"] = df["Date"].dt.year
+    df["Price"]=df["Price"].astype(str).str.replace(",","").astype(float)
 
-    yearly_returns = {}
+    df["Year"]=df["Date"].dt.year
+
+    yearly_returns={}
 
     for year in df["Year"].unique():
-        year_df = df[df["Year"] == year].sort_values("Date")
 
-        if len(year_df) < 2:
+        year_df=df[df["Year"]==year].sort_values("Date")
+
+        if len(year_df)<2:
             continue
 
-        first_price = year_df.iloc[0]["Price"]
-        last_price = year_df.iloc[-1]["Price"]
+        first_price=year_df.iloc[0]["Price"]
+        last_price=year_df.iloc[-1]["Price"]
 
-        yearly_return = (last_price - first_price) / first_price
-        yearly_returns[int(year)] = yearly_return
+        yearly_returns[int(year)]=(last_price-first_price)/first_price
 
     return yearly_returns
 
 
 # ==========================================
-# CORRELATION + YEAR ALIGNMENT
+# TRANSFORMATION KEYWORD SCAN
 # ==========================================
 
-def compute_correlation(sentiment_dict, return_dict, lag=0):
+def extract_transformation_focus(folder_path):
 
-    aligned_data = []
+    yearly_focus={}
 
-    for year in sentiment_dict:
-        target_year = year + lag
+    if not folder_path:
+        return yearly_focus
 
-        if target_year in return_dict:
-            aligned_data.append(
-                (year, sentiment_dict[year], return_dict[target_year])
+    for root,dirs,files in os.walk(folder_path):
+
+        year_match=re.search(r"(20\d{2})",root)
+
+        if not year_match:
+            continue
+
+        year=int(year_match.group(1))
+
+        combined_text=""
+
+        for file in files:
+
+            if not file.endswith(".pdf"):
+                continue
+
+            full_path=os.path.join(root,file)
+
+            try:
+                reader=PdfReader(full_path)
+
+                for page in reader.pages:
+                    combined_text+=page.extract_text() or ""
+
+            except:
+                continue
+
+        combined_text=combined_text.lower()
+
+        keywords_found=[]
+
+        for kw in TRANSFORMATION_KEYWORDS:
+
+            if kw in combined_text:
+                keywords_found.append(kw)
+
+        yearly_focus[year]=keywords_found
+
+    return yearly_focus
+
+
+# ==========================================
+# CORRELATION
+# ==========================================
+
+def compute_correlation(sentiment,returns,lag=0):
+
+    aligned=[]
+
+    for year in sentiment:
+
+        target=year+lag
+
+        if target in returns:
+
+            aligned.append(
+                (year,sentiment[year],returns[target])
             )
 
-    if len(aligned_data) < 2:
-        return None, []
+    if len(aligned)<2:
+        return None
 
-    x = [item[1] for item in aligned_data]
-    y = [item[2] for item in aligned_data]
+    x=[i[1] for i in aligned]
+    y=[i[2] for i in aligned]
 
-    corr, _ = pearsonr(x, y)
+    corr,_=pearsonr(x,y)
 
-    return corr, aligned_data
-
-
-# ==========================================
-# INTERPRETATION
-# ==========================================
-
-def interpret_correlation(value, timing):
-
-    abs_val = abs(value)
-
-    if abs_val >= 0.7:
-        strength = "strong"
-    elif abs_val >= 0.4:
-        strength = "moderate"
-    elif abs_val >= 0.2:
-        strength = "weak"
-    else:
-        strength = "very weak"
-
-    direction = "positive" if value > 0 else "inverse"
-
-    if timing == "same":
-        period = "within the same year"
-    else:
-        period = "in the following year"
-
-    explanation = (
-        f"There is a {strength} {direction} relationship between customer sentiment "
-        f"and stock returns {period}. "
-    )
-
-    if value > 0 and timing == "next":
-        explanation += (
-            "This suggests that improvements in customer perception may precede "
-            "stronger market performance."
-        )
-    elif value < 0:
-        explanation += (
-            "This indicates that market performance may be influenced more by "
-            "external macroeconomic or structural factors."
-        )
-
-    return explanation
+    return corr
 
 
 # ==========================================
@@ -179,91 +213,99 @@ def interpret_correlation(value, timing):
 
 def main():
 
-    print("\n📈 Running Market Correlation Engine...\n")
+    sentiment_data=load_sentiment_data()
 
-    sentiment_data = load_sentiment_data()
-    banks = discover_all_banks(BASE_CORP_PATH)
+    banks=discover_banks(BASE_CORP_PATH)
 
-    report_lines = []
-    report_lines.append("SENTIMENT → STOCK MARKET IMPACT REPORT")
-    report_lines.append("======================================\n")
+    report=[]
 
-    for bank, stock_path in banks.items():
+    report.append("STRATEGIC MARKET & SENTIMENT INTELLIGENCE REPORT")
+    report.append("=================================================\n")
 
-        report_lines.append(f"\n🏦 {bank}")
+    for bank,components in banks.items():
 
-        sentiment_dict = sentiment_data.get(bank)
+        report.append(f"\n🏦 {bank}")
+        report.append("-"*(len(bank)+3))
 
-        if sentiment_dict is None:
-            report_lines.append("Sentiment data not available.")
+        sentiment=sentiment_data.get(bank,{})
+        returns=compute_yearly_returns(components["stock"]) if components["stock"] else {}
+        transformation=extract_transformation_focus(components["annual"])
+
+        if not sentiment:
+            report.append("No sentiment data available.\n")
             continue
 
-        if not stock_path:
-            report_lines.append("Stock price data not available.")
-            continue
+        same_corr=compute_correlation(sentiment,returns,lag=0)
+        next_corr=compute_correlation(sentiment,returns,lag=1)
 
-        yearly_returns = compute_yearly_returns(stock_path)
-
-        # SAME YEAR
-        same_corr, same_data = compute_correlation(
-            sentiment_dict,
-            yearly_returns,
-            lag=0
-        )
+        report.append("\nExecutive Summary:")
 
         if same_corr is not None:
-            report_lines.append(
-                f"\nSame Year Correlation: {same_corr:.3f}"
-            )
-
-            report_lines.append("Years Analyzed:")
-
-            for year, sent, ret in same_data:
-                report_lines.append(
-                    f"  {year} → Sentiment: {sent:.3f} | Return: {ret:.3f}"
-                )
-
-            report_lines.append(
-                interpret_correlation(same_corr, "same")
-            )
-        else:
-            report_lines.append("\nSame Year: Insufficient overlapping data.")
-
-        # NEXT YEAR
-        next_corr, next_data = compute_correlation(
-            sentiment_dict,
-            yearly_returns,
-            lag=1
-        )
+            report.append(f"- Same Year Correlation: {same_corr:.3f}")
 
         if next_corr is not None:
-            report_lines.append(
-                f"\nNext Year Correlation: {next_corr:.3f}"
-            )
+            report.append(f"- Next Year Correlation: {next_corr:.3f}")
 
-            report_lines.append("Years Analyzed (Sentiment → Following Year Return):")
+        if same_corr is None and next_corr is None:
+            report.append("- Insufficient overlapping data for statistical correlation.")
 
-            for year, sent, ret in next_data:
-                report_lines.append(
-                    f"  {year} → Sentiment: {sent:.3f} | {year+1} Return: {ret:.3f}"
-                )
+        report.append("\nYear-by-Year Strategic Breakdown:")
 
-            report_lines.append(
-                interpret_correlation(next_corr, "next")
-            )
-        else:
-            report_lines.append("\nNext Year: Insufficient overlapping data.")
+        all_years=sorted(set(
+            list(sentiment.keys())+
+            list(returns.keys())+
+            list(transformation.keys())
+        ))
 
-        report_lines.append("")
+        for year in all_years:
 
-    final_report = "\n".join(report_lines)
+            report.append(f"\n📅 {year}")
 
-    with open(OUTPUT_PATH, "w") as f:
-        f.write(final_report)
+            focus=transformation.get(year)
 
-    print("\n📄 Report saved to:", OUTPUT_PATH)
-    print("\n" + final_report)
+            if focus:
+                report.append(f"Transformation Focus: {', '.join(focus)}")
+            else:
+                report.append("Transformation Focus: Not identified")
+
+            if year in sentiment:
+                s=sentiment[year]
+                mood="Positive" if s>0 else "Negative"
+                report.append(f"Customer Sentiment: {s:.3f} ({mood})")
+            else:
+                report.append("Customer Sentiment: Not available")
+
+            if year in returns:
+                r=returns[year]
+                direction="Positive" if r>0 else "Negative"
+                report.append(f"Market Return: {r:.3f} ({direction})")
+            else:
+                report.append("Market Return: Not available")
+
+            if year in sentiment and year in returns:
+
+                s=sentiment[year]
+                r=returns[year]
+
+                if s>0 and r>0:
+                    report.append("Interpretation: Strong alignment between customer perception and market performance.")
+                elif s<0 and r>0:
+                    report.append("Interpretation: Market confidence exists despite negative customer sentiment.")
+                elif s>0 and r<0:
+                    report.append("Interpretation: Positive customer perception not reflected in market valuation.")
+                else:
+                    report.append("Interpretation: Operational or strategic challenges reflected in both sentiment and stock.")
+
+        report.append("\n"+"="*60)
+
+    final_text="\n".join(report)
+
+    with open(OUTPUT_PATH,"w") as f:
+        f.write(final_text)
+
+    print("\nReport generated successfully.")
+    print("\nSaved to:",OUTPUT_PATH)
 
 
-if __name__ == "__main__":
+if __name__=="__main__":
     main()

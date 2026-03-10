@@ -6,35 +6,88 @@ from scripts.root_cause_analyzer import RootCauseAnalyzer
 # =====================================================
 # CONFIG
 # =====================================================
+# =====================================================
+# AUTO DISCOVER BANKS
+# =====================================================
 
-BANK_PATHS = {
-    "Krungthai Bank": "/content/drive/MyDrive/THINK_MVP/01_Corporate_Documents/Krungthai_Bank/Reviews",
-    "Kasikornbank": "/content/drive/MyDrive/THINK_MVP/01_Corporate_Documents/KBank/Reviews",
-    "SCB_Pre2022 Bank": "/content/drive/MyDrive/THINK_MVP/01_Corporate_Documents/SCB_Pre2022/Reviews",
-    "SCB X": "/content/drive/MyDrive/THINK_MVP/01_Corporate_Documents/SCBX_CardX/Reviews",
-}
+def discover_banks(base_path):
+
+    banks = {}
+
+    for bank_folder in os.listdir(base_path):
+
+        bank_path = os.path.join(base_path, bank_folder)
+
+        if not os.path.isdir(bank_path):
+            continue
+
+        reviews_path = os.path.join(bank_path, "Reviews")
+
+        if os.path.exists(reviews_path):
+
+            # Convert folder name → readable bank name
+            bank_name = bank_folder.replace("_", " ")
+
+            banks[bank_name] = reviews_path
+
+    return banks
 
 OUTPUT_DIR = "/content/drive/MyDrive/THINK_MVP/04_Analysis_Output"
 BENCHMARK_OUTPUT = os.path.join(OUTPUT_DIR, "bank_benchmark_report.txt")
-
+BASE_CORP_PATH = "/content/drive/MyDrive/THINK_MVP/01_Corporate_Documents"
 
 # =====================================================
-# HELPERS
+# LOAD REVIEWS (MULTI-SHEET SUPPORT)
 # =====================================================
 
 def load_texts_from_folder(folder_path):
+
     texts = []
 
     for file in os.listdir(folder_path):
-        if file.endswith(".xlsx"):
-            df = pd.read_excel(os.path.join(folder_path, file))
-            if "review" in df.columns:
-                texts.extend(df["review"].dropna().astype(str).tolist())
+
+        if not file.endswith(".xlsx"):
+            continue
+
+        full_path = os.path.join(folder_path, file)
+
+        print(f"\n📄 Loading file: {file}")
+
+        try:
+            xls = pd.ExcelFile(full_path)
+        except Exception as e:
+            print("⚠ Cannot open file:", e)
+            continue
+
+        # Read ALL sheets
+        for sheet in xls.sheet_names:
+
+            try:
+                df = pd.read_excel(xls, sheet_name=sheet)
+            except:
+                continue
+
+            print(f"   → Sheet: {sheet}")
+
+            if "review" not in df.columns:
+                print("   ⚠ 'review' column not found. Skipping.")
+                continue
+
+            reviews = df["review"].dropna().astype(str)
+
+            reviews = reviews[reviews.str.strip() != ""]
+
+            texts.extend(reviews.tolist())
 
     return texts
 
 
+# =====================================================
+# RISK LABEL
+# =====================================================
+
 def risk_label(score):
+
     if score < -0.6:
         return "Critical Risk"
     elif score < -0.4:
@@ -62,7 +115,9 @@ def main():
 
     print("\n🏦 Running Cross-Bank Benchmark...\n")
 
-    for bank, path in BANK_PATHS.items():
+    banks = discover_banks(BASE_CORP_PATH)
+
+    for bank, path in banks.items():
 
         if not os.path.exists(path):
             print(f"⚠ Folder not found for {bank}")
@@ -121,6 +176,7 @@ def main():
     lines.append("====================================\n")
 
     for i, bank_data in enumerate(benchmark_results, 1):
+
         lines.append(
             f"{i}. {bank_data['bank']} → "
             f"{bank_data['overall_sentiment']:.3f} "

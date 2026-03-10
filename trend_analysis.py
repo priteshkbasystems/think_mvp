@@ -52,38 +52,57 @@ def normalize_rating(star_rating):
 # ==========================================
 
 def load_reviews_with_dates(folder_path):
+
     data = []
 
     for file in os.listdir(folder_path):
+
         if file.endswith(".xlsx"):
+
             full_path = os.path.join(folder_path, file)
-            df = pd.read_excel(full_path)
 
-            print(f"\n📄 Loading: {file}")
-            print("Columns:", list(df.columns))
+            print(f"\n📄 Loading file: {file}")
 
-            if "Date" not in df.columns or "review" not in df.columns:
-                print("⚠ Required columns not found. Skipping file.")
+            try:
+                xls = pd.ExcelFile(full_path)
+            except Exception as e:
+                print("⚠ Unable to open file:", e)
                 continue
 
-            df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
-            df = df.dropna(subset=["Date"])
+            # Loop through ALL sheets
+            for sheet in xls.sheet_names:
 
-            df["review"] = df["review"].astype(str)
-            df = df[df["review"].str.strip() != ""]
+                try:
+                    df = pd.read_excel(xls, sheet_name=sheet)
+                except Exception:
+                    continue
 
-            # Rating optional but recommended
-            if "Rating" in df.columns:
-                df["Rating"] = pd.to_numeric(df["Rating"], errors="coerce")
-            else:
-                df["Rating"] = None
+                print(f"   → Sheet: {sheet}")
+                print("   Columns:", list(df.columns))
 
-            for _, row in df.iterrows():
-                data.append({
-                    "year": int(row["Date"].year),
-                    "text": row["review"],
-                    "rating": row["Rating"]
-                })
+                if "Date" not in df.columns or "review" not in df.columns:
+                    print("   ⚠ Required columns not found. Skipping sheet.")
+                    continue
+
+                df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
+                df = df.dropna(subset=["Date"])
+
+                df["review"] = df["review"].astype(str)
+                df = df[df["review"].str.strip() != ""]
+
+                # Rating optional
+                if "Rating" in df.columns:
+                    df["Rating"] = pd.to_numeric(df["Rating"], errors="coerce")
+                else:
+                    df["Rating"] = None
+
+                for _, row in df.iterrows():
+
+                    data.append({
+                        "year": int(row["Date"].year),
+                        "text": row["review"],
+                        "rating": row["Rating"]
+                    })
 
     return data
 

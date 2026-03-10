@@ -44,9 +44,11 @@ TRANSFORMATION_KEYWORDS = [
 # ==========================================
 
 def discover_banks(base_path):
+
     banks = {}
 
     for bank_folder in os.listdir(base_path):
+
         bank_path = os.path.join(base_path, bank_folder)
 
         if not os.path.isdir(bank_path):
@@ -58,38 +60,57 @@ def discover_banks(base_path):
         }
 
         for sub in os.listdir(bank_path):
+
             sub_path = os.path.join(bank_path, sub)
 
             if not os.path.isdir(sub_path):
                 continue
 
-            if sub.lower() == "annual_reports":
+            sub_lower = sub.lower()
+
+            if sub_lower == "annual_reports":
                 components["annual_reports"] = sub_path
 
-            elif sub.lower() == "Investor_Presentations":
-                components["Investor_Presentations"] = sub_path
+            elif sub_lower in ["investor_presentations", "investors_presentations"]:
+                components["investor_presentations"] = sub_path
 
         banks[bank_folder] = components
 
     return banks
+
 
 # ==========================================
 # PDF EXTRACTION
 # ==========================================
 
 def extract_text_from_pdf(pdf_path):
+
     try:
         reader = PdfReader(pdf_path)
         text = ""
+
         for page in reader.pages:
             text += page.extract_text() or ""
+
         return text.lower()
+
     except:
         return ""
 
-def extract_year_from_filename(filename):
-    match = re.search(r"(20\d{2})", filename)
-    return int(match.group(1)) if match else None
+
+# ==========================================
+# GET YEAR FROM FOLDER NAME
+# ==========================================
+
+def extract_year_from_path(path):
+
+    match = re.search(r"(20\d{2})", path)
+
+    if match:
+        return int(match.group(1))
+
+    return None
+
 
 # ==========================================
 # TRANSFORMATION INTENSITY
@@ -102,63 +123,73 @@ def compute_scores_from_folder(folder_path):
     if not folder_path or not os.path.exists(folder_path):
         return scores
 
-    for file in os.listdir(folder_path):
+    # Walk recursively through year folders
+    for root, dirs, files in os.walk(folder_path):
 
-        if not file.endswith(".pdf"):
-            continue
+        for file in files:
 
-        full_path = os.path.join(folder_path, file)
-        year = extract_year_from_filename(file)
+            if not file.endswith(".pdf"):
+                continue
 
-        if not year:
-            continue
+            full_path = os.path.join(root, file)
 
-        last_modified = get_file_modified_time(full_path)
-        cached = get_cached_score(full_path)
+            year = extract_year_from_path(root)
 
-        # If file unchanged → use cache
-        if cached and cached[0] == last_modified:
-            scores[cached[1]] = cached[2]
-            continue
+            if not year:
+                continue
 
-        # Otherwise re-extract PDF
-        text = extract_text_from_pdf(full_path)
+            last_modified = get_file_modified_time(full_path)
+            cached = get_cached_score(full_path)
 
-        if not text:
-            continue
+            # Use cache if unchanged
+            if cached and cached[0] == last_modified:
+                scores[cached[1]] = cached[2]
+                continue
 
-        words = re.findall(r"\b\w+\b", text)
-        total_words = len(words)
+            text = extract_text_from_pdf(full_path)
 
-        if total_words == 0:
-            continue
+            if not text:
+                continue
 
-        keyword_count = 0
+            words = re.findall(r"\b\w+\b", text)
+            total_words = len(words)
 
-        for keyword in TRANSFORMATION_KEYWORDS:
-            pattern = r"\b" + re.escape(keyword.lower()) + r"\b"
-            keyword_count += len(re.findall(pattern, text))
+            if total_words == 0:
+                continue
 
-        intensity_score = keyword_count / total_words
+            keyword_count = 0
 
-        scores[year] = intensity_score
+            for keyword in TRANSFORMATION_KEYWORDS:
 
-        # Update cache
-        update_cache(full_path, last_modified, year, intensity_score)
+                pattern = r"\b" + re.escape(keyword.lower()) + r"\b"
+                keyword_count += len(re.findall(pattern, text))
+
+            intensity_score = keyword_count / total_words
+
+            scores[year] = intensity_score
+
+            update_cache(full_path, last_modified, year, intensity_score)
 
     return scores
 
 
+# ==========================================
+# NORMALIZE SCORES
+# ==========================================
+
 def normalize_scores(scores):
+
     if not scores:
         return scores
 
     max_val = max(scores.values())
+
     if max_val > 0:
         for year in scores:
             scores[year] = scores[year] / max_val
 
     return scores
+
 
 # ==========================================
 # LOAD SENTIMENT JSON
@@ -171,12 +202,10 @@ def load_sentiment_trend():
         "bank_trend_data.json"
     )
 
-    # If trend file missing → generate it
     if not os.path.exists(trend_file):
         print("⚠ Sentiment trend data not found. Running Trend Engine...")
         run_trend_engine()
 
-    # After attempting generation, check again
     if not os.path.exists(trend_file):
         print("❌ Trend generation failed.")
         return {}
@@ -187,6 +216,7 @@ def load_sentiment_trend():
     sentiment_data = {}
 
     for bank_name, bank_data in raw_data.items():
+
         sentiment_data[bank_name] = {
             int(year): score
             for year, score in bank_data["yearly_sentiment"].items()
@@ -194,8 +224,9 @@ def load_sentiment_trend():
 
     return sentiment_data
 
+
 # ==========================================
-# CORRELATION (1-Year Lag)
+# CORRELATION (1-YEAR LAG)
 # ==========================================
 
 def compute_correlation(transformation_scores, sentiment_scores):
@@ -212,8 +243,11 @@ def compute_correlation(transformation_scores, sentiment_scores):
     y = []
 
     for year in overlapping_years:
+
         next_year = year + 1
+
         if next_year in sentiment_scores:
+
             x.append(transformation_scores[year])
             y.append(sentiment_scores[next_year])
 
@@ -221,20 +255,26 @@ def compute_correlation(transformation_scores, sentiment_scores):
         return None
 
     correlation, _ = pearsonr(x, y)
+
     return correlation
+
 
 # ==========================================
 # MAIN
 # ==========================================
 
 def main():
+
     init_db()
+
     print("\n🔎 Running Transformation Correlation Engine...\n")
 
     banks = discover_banks(BASE_CORP_PATH)
+
     sentiment_trends = load_sentiment_trend()
 
     report_lines = []
+
     report_lines.append("TRANSFORMATION IMPACT CORRELATION REPORT")
     report_lines.append("=========================================\n")
 
@@ -244,14 +284,13 @@ def main():
 
         print(f"\nAnalyzing {display_name}...")
 
-        # Compute Annual + Investor scores
         annual_scores = compute_scores_from_folder(components["annual_reports"])
         investor_scores = compute_scores_from_folder(components["investor_presentations"])
 
-        # Merge both sources
         transformation_scores = annual_scores.copy()
 
         for year, score in investor_scores.items():
+
             if year in transformation_scores:
                 transformation_scores[year] = (
                     transformation_scores[year] + score
@@ -271,6 +310,7 @@ def main():
         report_lines.append(f"\n🏦 {display_name}")
 
         if correlation is None:
+
             report_lines.append("Insufficient data for correlation.")
             continue
 
