@@ -211,25 +211,28 @@ def main():
         for year in sorted(year_groups.keys()):
 
             items = year_groups[year]
-            texts = [x["text"] for x in items]
-
-            try:
-                _, _, metrics = processor.process(texts)
-                text_score = float(metrics["overall_sentiment"])
-            except Exception:
-                text_score = 0.0
 
             fused_scores = []
             contradiction_count = 0
 
             for item in items:
 
+                # --- PER REVIEW SENTIMENT ---
+                try:
+                    _, _, metrics = processor.process([item["text"]])
+                    text_score = float(metrics["overall_sentiment"])
+                except Exception:
+                    text_score = 0.0
+
+                # --- FUSION WITH RATING ---
                 final_score, contradiction = fuse_sentiment(
                     text_score,
                     item["rating"]
                 )
 
                 label = sentiment_label(final_score)
+
+                # --- SAVE INDIVIDUAL REVIEW SENTIMENT ---
                 save_review_sentiment(
                     bank,
                     year,
@@ -238,6 +241,7 @@ def main():
                     final_score,
                     label
                 )
+
                 fused_scores.append(final_score)
 
                 if contradiction:
@@ -246,13 +250,14 @@ def main():
             if len(fused_scores) == 0:
                 continue
 
+            # --- YEARLY AGGREGATION ---
             yearly_score = sum(fused_scores) / len(fused_scores)
             contradiction_ratio = contradiction_count / len(items)
 
             year_sentiments[year] = yearly_score
             yearly_contradictions[year] = contradiction_ratio
 
-            # SAVE TO SQLITE
+            # --- SAVE YEARLY SCORE ---
             save_sentiment_score(
                 bank,
                 year,
