@@ -3,6 +3,8 @@ import numbers
 import os
 from datetime import datetime
 
+from scripts.utils.sentiment_utils import sentiment_label
+
 
 class RootCauseAnalyzer:
 
@@ -11,11 +13,9 @@ class RootCauseAnalyzer:
     # --------------------------------------------------
     def _extract_score(self, sentiment):
 
-        # Unwrap nested lists
         while isinstance(sentiment, list) and len(sentiment) > 0:
             sentiment = sentiment[0]
 
-        # Torch tensor support
         try:
             import torch
             if isinstance(sentiment, torch.Tensor):
@@ -23,14 +23,11 @@ class RootCauseAnalyzer:
         except Exception:
             pass
 
-        # Numeric
         if isinstance(sentiment, numbers.Number):
             return float(sentiment)
 
-        # Dictionary formats
         if isinstance(sentiment, dict):
 
-            # Custom pipeline format
             if "sentiment" in sentiment and "confidence" in sentiment:
                 label = str(sentiment.get("sentiment", "")).upper()
                 confidence = float(sentiment.get("confidence", 0))
@@ -41,7 +38,6 @@ class RootCauseAnalyzer:
                     return confidence
                 return 0.0
 
-            # HuggingFace format
             if "label" in sentiment and "score" in sentiment:
                 label = str(sentiment.get("label", "")).upper()
                 confidence = float(sentiment.get("score", 0))
@@ -52,14 +48,12 @@ class RootCauseAnalyzer:
                     return confidence
                 return 0.0
 
-            # Probability format
             if "negative" in sentiment:
                 return -float(sentiment.get("negative", 0))
 
             if "positive" in sentiment:
                 return float(sentiment.get("positive", 0))
 
-        # Fallback
         try:
             return float(sentiment)
         except Exception:
@@ -74,80 +68,103 @@ class RootCauseAnalyzer:
                 output_dir=None,
                 verbose=True):
 
+        if not texts or not sentiments:
+            return Counter()
+
         root_causes = Counter()
+
         negative_count = 0
+        neutral_count = 0
+        positive_count = 0
+
+        # Keyword groups
+        keyword_map = {
+            "Performance Issues": ["slow", "delay", "lag", "sluggish", "loading"],
+            "App Crashes": ["crash", "freeze", "hang", "stuck"],
+            "Login Problems": ["login", "otp", "authentication", "verify", "password"],
+            "App Update Issues": ["update", "latest version"],
+            "Payment Failures": ["payment", "transfer", "transaction", "qr", "bill"],
+            "Accessibility / UX Issues": ["accessibility", "dark mode", "developer option", "usability"]
+        }
 
         for text, sentiment in zip(texts, sentiments):
 
             score = self._extract_score(sentiment)
+            label = sentiment_label(score)
 
-            if score < 0:
+            if label == "Negative":
+
                 negative_count += 1
                 text_lower = text.lower()
 
-                if any(word in text_lower for word in
-                       ["slow", "delay", "lag", "sluggish", "loading"]):
-                    root_causes["Performance Issues"] += 1
+                matched = False
 
-                elif any(word in text_lower for word in
-                         ["crash", "freeze", "hang", "stuck"]):
-                    root_causes["App Crashes"] += 1
+                for category, keywords in keyword_map.items():
+                    if any(word in text_lower for word in keywords):
+                        root_causes[category] += 1
+                        matched = True
+                        break
 
-                elif any(word in text_lower for word in
-                         ["login", "otp", "authentication", "verify", "password"]):
-                    root_causes["Login Problems"] += 1
-
-                elif "update" in text_lower:
-                    root_causes["App Update Issues"] += 1
-
-                elif any(word in text_lower for word in
-                         ["payment", "transfer", "transaction", "qr", "bill"]):
-                    root_causes["Payment Failures"] += 1
-
-                elif any(word in text_lower for word in
-                         ["accessibility", "dark mode", "developer option", "usability"]):
-                    root_causes["Accessibility / UX Issues"] += 1
-
-                else:
+                if not matched:
                     root_causes["Other Complaints"] += 1
 
+            elif label == "Neutral":
+                neutral_count += 1
+
+            else:
+                positive_count += 1
+
         # --------------------------------------------------
-        # BUILD REPORT STRING
+        # BUILD REPORT
         # --------------------------------------------------
+
         report_lines = []
         report_lines.append("🔍 ROOT CAUSE ANALYSIS")
-        report_lines.append("=" * 40)
+        report_lines.append("=" * 45)
 
         if bank_name:
             report_lines.append(f"Bank: {bank_name}")
 
-        report_lines.append(f"Total Reviews: {len(sentiments)}")
+        total_reviews = len(sentiments)
+
+        report_lines.append(f"Total Reviews: {total_reviews}")
+        report_lines.append(f"Positive Reviews: {positive_count}")
+        report_lines.append(f"Neutral Reviews: {neutral_count}")
         report_lines.append(f"Negative Reviews: {negative_count}")
         report_lines.append("")
 
         if negative_count == 0:
+
             report_lines.append("⚠ No negative reviews detected.")
+
         else:
+
+            report_lines.append("Main Complaint Categories:\n")
+
             for cause, count in root_causes.most_common():
+
                 percentage = (count / negative_count) * 100
+
                 report_lines.append(
                     f"{cause}: {count} ({percentage:.1f}%)"
                 )
 
-        report_lines.append("=" * 40)
+        report_lines.append("=" * 45)
         report_lines.append("")
 
         final_report = "\n".join(report_lines)
 
         # --------------------------------------------------
-        # PRINT TO CONSOLE
+        # PRINT
         # --------------------------------------------------
+
         if verbose:
             print("\n" + final_report)
 
         # --------------------------------------------------
-        # SAVE TO TXT FILE
+        # SAVE FILE
         # --------------------------------------------------
+
         if save_to_file:
 
             if output_dir is None:

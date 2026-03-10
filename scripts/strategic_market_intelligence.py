@@ -2,6 +2,9 @@ import os
 import json
 import sqlite3
 
+from scripts.utils.sentiment_utils import sentiment_label
+
+
 # ==========================================
 # CONFIG
 # ==========================================
@@ -44,15 +47,26 @@ def load_sentiment_data():
 
 def load_stock_returns():
 
+    if not os.path.exists(DB_PATH):
+        print("⚠ Database not found:", DB_PATH)
+        return {}
+
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
 
-    cursor.execute("""
-        SELECT bank_name, year, return
-        FROM stock_returns
-    """)
+    try:
 
-    rows = cursor.fetchall()
+        cursor.execute("""
+            SELECT bank_name, year, return
+            FROM stock_returns
+        """)
+
+        rows = cursor.fetchall()
+
+    except Exception:
+        print("⚠ stock_returns table not found in database")
+        conn.close()
+        return {}
 
     conn.close()
 
@@ -72,16 +86,24 @@ def load_stock_returns():
 # INTERPRETATION LOGIC
 # ==========================================
 
-def interpret(sentiment, stock):
+def interpret(sentiment_score, stock_return):
 
-    if sentiment > 0 and stock > 0:
+    sentiment = sentiment_label(sentiment_score)
+
+    if sentiment == "Positive" and stock_return > 0:
         return "Customer perception and investor confidence are aligned."
 
-    elif sentiment < 0 and stock > 0:
+    elif sentiment == "Negative" and stock_return > 0:
         return "Investors remain confident despite negative customer sentiment."
 
-    elif sentiment > 0 and stock < 0:
+    elif sentiment == "Positive" and stock_return < 0:
         return "Positive customer perception not reflected in market performance."
+
+    elif sentiment == "Neutral" and stock_return > 0:
+        return "Market performance improved while customer sentiment remained neutral."
+
+    elif sentiment == "Neutral" and stock_return < 0:
+        return "Market declined despite neutral customer sentiment."
 
     else:
         return "Operational challenges reflected in both sentiment and stock returns."
@@ -103,7 +125,7 @@ def main():
     report.append("STRATEGIC MARKET INTELLIGENCE REPORT")
     report.append("====================================\n")
 
-    for bank in sentiment_data:
+    for bank in sorted(sentiment_data.keys()):
 
         report.append(f"\n🏦 {bank}")
         report.append("-" * (len(bank) + 3))
@@ -117,18 +139,27 @@ def main():
 
             report.append(f"\n📅 {year}")
 
+            # ==========================
+            # SENTIMENT
+            # ==========================
+
             if year in sentiment:
 
                 s = sentiment[year]
 
-                mood = "Positive" if s > 0 else "Negative"
+                mood = sentiment_label(s)
 
                 report.append(
                     f"Customer Sentiment: {s:.3f} ({mood})"
                 )
 
             else:
+
                 report.append("Customer Sentiment: Not available")
+
+            # ==========================
+            # STOCK RETURN
+            # ==========================
 
             if year in stock:
 
@@ -141,7 +172,12 @@ def main():
                 )
 
             else:
+
                 report.append("Stock Market Return: Not available")
+
+            # ==========================
+            # INTERPRETATION
+            # ==========================
 
             if year in sentiment and year in stock:
 

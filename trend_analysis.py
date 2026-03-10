@@ -2,7 +2,9 @@ import os
 import json
 import pandas as pd
 from collections import defaultdict
+
 from scripts.processor import TextProcessor
+from scripts.utils.sentiment_utils import sentiment_label
 
 
 # ==========================================
@@ -23,9 +25,18 @@ CONTRADICTION_THRESHOLD = 0.8
 # ==========================================
 
 def discover_review_folders(base_path):
+
     banks = {}
 
-    for bank_folder in os.listdir(base_path):
+    if not os.path.exists(base_path):
+        print("❌ Base path not found:", base_path)
+        return banks
+
+    for bank_folder in sorted(os.listdir(base_path)):
+
+        if bank_folder.startswith("."):
+            continue
+
         bank_path = os.path.join(base_path, bank_folder)
 
         if not os.path.isdir(bank_path):
@@ -34,13 +45,16 @@ def discover_review_folders(base_path):
         reviews_path = os.path.join(bank_path, "Reviews")
 
         if os.path.exists(reviews_path):
-            banks[bank_folder.replace("_", " ")] = reviews_path
+
+            display_name = bank_folder.replace("_", " ")
+
+            banks[display_name] = reviews_path
 
     return banks
 
 
 # ==========================================
-# NORMALIZE STAR RATING (1–5 → -1 to +1)
+# NORMALIZE STAR RATING
 # ==========================================
 
 def normalize_rating(star_rating):
@@ -57,52 +71,51 @@ def load_reviews_with_dates(folder_path):
 
     for file in os.listdir(folder_path):
 
-        if file.endswith(".xlsx"):
+        if not file.endswith(".xlsx"):
+            continue
 
-            full_path = os.path.join(folder_path, file)
+        full_path = os.path.join(folder_path, file)
 
-            print(f"\n📄 Loading file: {file}")
+        print(f"\n📄 Loading file: {file}")
+
+        try:
+            xls = pd.ExcelFile(full_path)
+        except Exception as e:
+            print("⚠ Unable to open file:", e)
+            continue
+
+        # Loop through ALL sheets
+        for sheet in xls.sheet_names:
 
             try:
-                xls = pd.ExcelFile(full_path)
-            except Exception as e:
-                print("⚠ Unable to open file:", e)
+                df = pd.read_excel(xls, sheet_name=sheet)
+            except Exception:
                 continue
 
-            # Loop through ALL sheets
-            for sheet in xls.sheet_names:
+            print(f"   → Sheet: {sheet}")
 
-                try:
-                    df = pd.read_excel(xls, sheet_name=sheet)
-                except Exception:
-                    continue
+            if "Date" not in df.columns or "review" not in df.columns:
+                print("   ⚠ Required columns missing. Skipping sheet.")
+                continue
 
-                print(f"   → Sheet: {sheet}")
-                print("   Columns:", list(df.columns))
+            df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
+            df = df.dropna(subset=["Date"])
 
-                if "Date" not in df.columns or "review" not in df.columns:
-                    print("   ⚠ Required columns not found. Skipping sheet.")
-                    continue
+            df["review"] = df["review"].astype(str)
+            df = df[df["review"].str.strip() != ""]
 
-                df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
-                df = df.dropna(subset=["Date"])
+            if "Rating" in df.columns:
+                df["Rating"] = pd.to_numeric(df["Rating"], errors="coerce")
+            else:
+                df["Rating"] = None
 
-                df["review"] = df["review"].astype(str)
-                df = df[df["review"].str.strip() != ""]
+            for _, row in df.iterrows():
 
-                # Rating optional
-                if "Rating" in df.columns:
-                    df["Rating"] = pd.to_numeric(df["Rating"], errors="coerce")
-                else:
-                    df["Rating"] = None
-
-                for _, row in df.iterrows():
-
-                    data.append({
-                        "year": int(row["Date"].year),
-                        "text": row["review"],
-                        "rating": row["Rating"]
-                    })
+                data.append({
+                    "year": int(row["Date"].year),
+                    "text": row["review"],
+                    "rating": row["Rating"]
+                })
 
     return data
 
@@ -114,7 +127,7 @@ def load_reviews_with_dates(folder_path):
 def fuse_sentiment(text_score, rating):
 
     if rating is None or pd.isna(rating):
-        return text_score, False  # no contradiction
+        return text_score, False
 
     normalized_rating = normalize_rating(rating)
 
@@ -134,6 +147,7 @@ def fuse_sentiment(text_score, rating):
 # ==========================================
 
 def detect_trend(year_sentiments):
+
     years = sorted(year_sentiments.keys())
     values = [year_sentiments[y] for y in years]
 
@@ -141,16 +155,20 @@ def detect_trend(year_sentiments):
         return "Insufficient Data"
 
     total_change = sum(
-        values[i] - values[i - 1] for i in range(1, len(values))
+        values[i] - values[i - 1]
+        for i in range(1, len(values))
     )
 
     avg_change = total_change / (len(values) - 1)
+
     threshold = 0.01
 
     if avg_change > threshold:
         return "Improving"
+
     elif avg_change < -threshold:
         return "Declining"
+
     else:
         return "Stable"
 
@@ -165,6 +183,7 @@ def main():
     banks = discover_review_folders(BASE_CORP_PATH)
 
     report_lines = []
+
     report_lines.append("THAI BANK SENTIMENT TREND REPORT (TEXT + STAR FUSION)")
     report_lines.append("=====================================================\n")
 
@@ -177,9 +196,11 @@ def main():
         data = load_reviews_with_dates(path)
 
         if len(data) == 0:
+            print(f"⚠ No review data for {bank}")
             continue
 
         year_groups = defaultdict(list)
+
         for item in data:
             year_groups[item["year"]].append(item)
 
@@ -192,6 +213,7 @@ def main():
         for year in sorted(year_groups.keys()):
 
             items = year_groups[year]
+
             texts = [x["text"] for x in items]
 
             try:
@@ -200,19 +222,23 @@ def main():
             except Exception:
                 text_score = 0.0
 
-            # Apply fusion per review
             fused_scores = []
             contradiction_count = 0
 
             for item in items:
+
                 final_score, contradiction = fuse_sentiment(
                     text_score,
                     item["rating"]
                 )
+
                 fused_scores.append(final_score)
 
                 if contradiction:
                     contradiction_count += 1
+
+            if len(fused_scores) == 0:
+                continue
 
             yearly_score = sum(fused_scores) / len(fused_scores)
             contradiction_ratio = contradiction_count / len(items)
@@ -220,7 +246,12 @@ def main():
             year_sentiments[year] = yearly_score
             yearly_contradictions[year] = contradiction_ratio
 
-            print(f"{year} → {yearly_score:.3f} | Contradiction Rate: {contradiction_ratio:.2%}")
+            label = sentiment_label(yearly_score)
+
+            print(
+                f"{year} → {yearly_score:.3f} ({label}) "
+                f"| Contradiction Rate: {contradiction_ratio:.2%}"
+            )
 
         trend_direction = detect_trend(year_sentiments)
 
@@ -234,14 +265,20 @@ def main():
         report_lines.append("----------------------------")
 
         for year in sorted(year_sentiments.keys()):
+
+            label = sentiment_label(year_sentiments[year])
+
             report_lines.append(
-                f"{year} → {year_sentiments[year]:.3f} "
+                f"{year} → {year_sentiments[year]:.3f} ({label}) "
                 f"(Contradiction: {yearly_contradictions[year]:.2%})"
             )
 
         report_lines.append(f"Trend: {trend_direction}\n")
 
-    # Save reports
+    # ==========================================
+    # SAVE REPORTS
+    # ==========================================
+
     with open(OUTPUT_PATH, "w", encoding="utf-8") as f:
         f.write("\n".join(report_lines))
 
@@ -251,6 +288,10 @@ def main():
     print("\n📄 Trend report saved to:", OUTPUT_PATH)
     print("📄 JSON trend data saved to:", JSON_OUTPUT_PATH)
 
+
+# ==========================================
+# RUN
+# ==========================================
 
 if __name__ == "__main__":
     main()
