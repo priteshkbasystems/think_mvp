@@ -48,7 +48,7 @@ def load_stock_returns():
     cursor = conn.cursor()
 
     cursor.execute("""
-        SELECT bank_name, year, yearly_return
+        SELECT bank_name, year, return
         FROM stock_returns
     """)
 
