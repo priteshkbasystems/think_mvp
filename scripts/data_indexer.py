@@ -43,7 +43,7 @@ def discover_banks(base_path):
 
             for file in os.listdir(stock_folder):
 
-                if file.endswith(".xlsx"):
+                if file.endswith(".xlsx") or file.endswith(".csv"):
                     stock_file = os.path.join(stock_folder, file)
 
         banks[display_name] = {
@@ -55,12 +55,43 @@ def discover_banks(base_path):
 
 
 # ==========================================
-# COMPUTE STOCK RETURNS
+# LOAD STOCK FILE (CSV OR XLSX)
 # ==========================================
 
-def compute_yearly_returns(csv_path):
+def load_stock_dataframe(file_path):
 
-    df = pd.read_csv(csv_path)
+    if file_path.endswith(".xlsx"):
+
+        xls = pd.ExcelFile(file_path)
+
+        for sheet in xls.sheet_names:
+
+            df = pd.read_excel(xls, sheet_name=sheet)
+
+            if "Date" in df.columns and "Price" in df.columns:
+                return df
+
+        return None
+
+    else:
+
+        try:
+            return pd.read_csv(file_path, encoding="utf-8")
+        except:
+            return pd.read_csv(file_path, encoding="latin1")
+
+
+# ==========================================
+# COMPUTE YEARLY RETURNS
+# ==========================================
+
+def compute_yearly_returns(file_path):
+
+    df = load_stock_dataframe(file_path)
+
+    if df is None:
+        print("⚠ No valid sheet with Date/Price found.")
+        return {}
 
     df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
     df = df.dropna(subset=["Date"])
