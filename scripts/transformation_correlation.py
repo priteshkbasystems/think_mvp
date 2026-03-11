@@ -2,6 +2,7 @@ import os
 import re
 import json
 import numpy as np
+import hashlib
 from PyPDF2 import PdfReader
 from scipy.stats import pearsonr
 from trend_analysis import main as run_trend_engine
