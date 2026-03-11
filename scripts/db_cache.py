@@ -87,7 +87,16 @@ def init_db():
             sentiment_label TEXT
         )
     """)
-
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS complaint_topics (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        bank_name TEXT,
+        topic_id INTEGER,
+        keywords TEXT,
+        review_count INTEGER,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+    """)
     conn.commit()
     conn.close()
 
@@ -268,6 +277,22 @@ def save_review_sentiment(bank, year, text, rating, score, label):
         (bank_name, year, review_text, rating, sentiment_score, sentiment_label)
         VALUES (?, ?, ?, ?, ?, ?)
     """, (bank, year, text, rating, score, label))
+
+    conn.commit()
+    conn.close()
+
+def save_complaint_topics(bank_name, topics):
+
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+
+    for topic_id, keywords in topics.items():
+
+        cursor.execute("""
+            INSERT INTO complaint_topics
+            (bank_name, topic_id, keywords)
+            VALUES (?, ?, ?)
+        """, (bank_name, topic_id, ",".join(keywords)))
 
     conn.commit()
     conn.close()

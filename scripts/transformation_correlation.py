@@ -6,6 +6,10 @@ from PyPDF2 import PdfReader
 from scipy.stats import pearsonr
 from trend_analysis import main as run_trend_engine
 
+# AI embeddings
+from sentence_transformers import SentenceTransformer
+from sklearn.metrics.pairwise import cosine_similarity
+
 from scripts.db_cache import (
     init_db,
     get_file_modified_time,
@@ -23,21 +27,34 @@ BASE_CORP_PATH = "/content/drive/MyDrive/THINK_MVP/01_Corporate_Documents"
 TREND_OUTPUT_PATH = "/content/drive/MyDrive/THINK_MVP/04_Analysis_Output"
 FINAL_OUTPUT_PATH = "/content/drive/MyDrive/THINK_MVP/04_Analysis_Output/transformation_correlation_report.txt"
 
-TRANSFORMATION_KEYWORDS = [
-    "digital",
-    "mobile",
-    "platform",
-    "ecosystem",
-    "ai",
-    "artificial intelligence",
-    "machine learning",
-    "automation",
-    "analytics",
-    "customer experience",
-    "innovation",
-    "technology",
-    "upgrade"
+
+# Strategic Transformation Themes
+TRANSFORMATION_THEMES = [
+    "digital transformation in banking",
+    "banking technology modernization",
+    "customer experience improvement",
+    "data analytics and AI in banking",
+    "automation of financial services",
+    "sustainability and ESG banking strategy",
+    "platform banking ecosystem",
+    "business model innovation in banking",
+    "portfolio optimization in banking",
+    "financial technology innovation"
 ]
+
+
+# ==========================================
+# LOAD AI MODEL
+# ==========================================
+
+print("Loading AI transformation model...")
+
+embedding_model = SentenceTransformer("all-MiniLM-L6-v2")
+
+THEME_EMBEDDINGS = embedding_model.encode(TRANSFORMATION_THEMES)
+
+print("Model ready.")
+
 
 # ==========================================
 # AUTO BANK DISCOVERY
@@ -71,7 +88,7 @@ def discover_banks(base_path):
             if sub_lower == "annual_reports":
                 components["annual_reports"] = sub_path
 
-            elif sub_lower in ["investor_presentations", "investors_presentations"]:
+            elif sub_lower in ["investor_presentations","investors_presentations"]:
                 components["investor_presentations"] = sub_path
 
         banks[bank_folder] = components
@@ -80,13 +97,15 @@ def discover_banks(base_path):
 
 
 # ==========================================
-# PDF EXTRACTION
+# PDF TEXT EXTRACTION
 # ==========================================
 
 def extract_text_from_pdf(pdf_path):
 
     try:
+
         reader = PdfReader(pdf_path)
+
         text = ""
 
         for page in reader.pages:
@@ -99,7 +118,7 @@ def extract_text_from_pdf(pdf_path):
 
 
 # ==========================================
-# GET YEAR FROM FOLDER NAME
+# YEAR FROM FOLDER
 # ==========================================
 
 def extract_year_from_path(path):
@@ -113,7 +132,31 @@ def extract_year_from_path(path):
 
 
 # ==========================================
-# TRANSFORMATION INTENSITY
+# AI TRANSFORMATION SCORE
+# ==========================================
+
+def compute_transformation_score(text):
+
+    sentences = re.split(r"[.!?]", text)
+
+    sentences = [s.strip() for s in sentences if len(s.strip()) > 30]
+
+    if not sentences:
+        return 0
+
+    sentence_embeddings = embedding_model.encode(sentences)
+
+    similarity_matrix = cosine_similarity(sentence_embeddings, THEME_EMBEDDINGS)
+
+    max_scores = similarity_matrix.max(axis=1)
+
+    score = float(np.mean(max_scores))
+
+    return score
+
+
+# ==========================================
+# SCAN FOLDER
 # ==========================================
 
 def compute_scores_from_folder(folder_path):
@@ -123,7 +166,6 @@ def compute_scores_from_folder(folder_path):
     if not folder_path or not os.path.exists(folder_path):
         return scores
 
-    # Walk recursively through year folders
     for root, dirs, files in os.walk(folder_path):
 
         for file in files:
@@ -139,9 +181,9 @@ def compute_scores_from_folder(folder_path):
                 continue
 
             last_modified = get_file_modified_time(full_path)
+
             cached = get_cached_score(full_path)
 
-            # Use cache if unchanged
             if cached and cached[0] == last_modified:
                 scores[cached[1]] = cached[2]
                 continue
@@ -151,20 +193,7 @@ def compute_scores_from_folder(folder_path):
             if not text:
                 continue
 
-            words = re.findall(r"\b\w+\b", text)
-            total_words = len(words)
-
-            if total_words == 0:
-                continue
-
-            keyword_count = 0
-
-            for keyword in TRANSFORMATION_KEYWORDS:
-
-                pattern = r"\b" + re.escape(keyword.lower()) + r"\b"
-                keyword_count += len(re.findall(pattern, text))
-
-            intensity_score = keyword_count / total_words
+            intensity_score = compute_transformation_score(text)
 
             scores[year] = intensity_score
 
@@ -185,6 +214,7 @@ def normalize_scores(scores):
     max_val = max(scores.values())
 
     if max_val > 0:
+
         for year in scores:
             scores[year] = scores[year] / max_val
 
@@ -192,7 +222,7 @@ def normalize_scores(scores):
 
 
 # ==========================================
-# LOAD SENTIMENT JSON
+# LOAD SENTIMENT
 # ==========================================
 
 def load_sentiment_trend():
@@ -203,14 +233,19 @@ def load_sentiment_trend():
     )
 
     if not os.path.exists(trend_file):
+
         print("⚠ Sentiment trend data not found. Running Trend Engine...")
+
         run_trend_engine()
 
     if not os.path.exists(trend_file):
+
         print("❌ Trend generation failed.")
+
         return {}
 
-    with open(trend_file, "r", encoding="utf-8") as f:
+    with open(trend_file,"r",encoding="utf-8") as f:
+
         raw_data = json.load(f)
 
     sentiment_data = {}
@@ -218,29 +253,35 @@ def load_sentiment_trend():
     for bank_name, bank_data in raw_data.items():
 
         sentiment_data[bank_name] = {
+
             int(year): score
+
             for year, score in bank_data["yearly_sentiment"].items()
+
         }
 
     return sentiment_data
 
 
 # ==========================================
-# CORRELATION (1-YEAR LAG)
+# CORRELATION
 # ==========================================
 
 def compute_correlation(transformation_scores, sentiment_scores):
 
     overlapping_years = sorted(
+
         set(transformation_scores.keys()) &
+
         set(year - 1 for year in sentiment_scores.keys())
+
     )
 
     if len(overlapping_years) < 2:
         return None
 
-    x = []
-    y = []
+    x=[]
+    y=[]
 
     for year in overlapping_years:
 
@@ -249,12 +290,13 @@ def compute_correlation(transformation_scores, sentiment_scores):
         if next_year in sentiment_scores:
 
             x.append(transformation_scores[year])
+
             y.append(sentiment_scores[next_year])
 
     if len(x) < 2:
         return None
 
-    correlation, _ = pearsonr(x, y)
+    correlation,_ = pearsonr(x,y)
 
     return correlation
 
@@ -264,8 +306,6 @@ def compute_correlation(transformation_scores, sentiment_scores):
 # ==========================================
 
 def main():
-
-    init_db()
 
     print("\n🔎 Running Transformation Correlation Engine...\n")
 
@@ -280,30 +320,34 @@ def main():
 
     for bank_folder, components in banks.items():
 
-        display_name = bank_folder.replace("_", " ")
+        display_name = bank_folder.replace("_"," ")
 
         print(f"\nAnalyzing {display_name}...")
 
         annual_scores = compute_scores_from_folder(components["annual_reports"])
+
         investor_scores = compute_scores_from_folder(components["investor_presentations"])
 
         transformation_scores = annual_scores.copy()
 
-        for year, score in investor_scores.items():
+        for year,score in investor_scores.items():
 
             if year in transformation_scores:
+
                 transformation_scores[year] = (
+
                     transformation_scores[year] + score
+
                 ) / 2
+
             else:
+
                 transformation_scores[year] = score
+
 
         transformation_scores = normalize_scores(transformation_scores)
 
-        sentiment_scores = sentiment_trends.get(display_name, {})
-
-        print("Transformation Years:", sorted(transformation_scores.keys()))
-        print("Sentiment Years:", sorted(sentiment_scores.keys()))
+        sentiment_scores = sentiment_trends.get(display_name,{})
 
         correlation = compute_correlation(transformation_scores, sentiment_scores)
 
@@ -312,31 +356,47 @@ def main():
         if correlation is None:
 
             report_lines.append("Insufficient data for correlation.")
+
             continue
 
+
         report_lines.append(
+
             f"Correlation (Transformation → Next Year Sentiment): {correlation:.3f}"
+
         )
 
+
         if correlation > 0.7:
-            impact = "High Positive Impact"
+
+            impact="High Positive Impact"
+
         elif correlation > 0.3:
-            impact = "Moderate Positive Impact"
+
+            impact="Moderate Positive Impact"
+
         elif correlation > -0.3:
-            impact = "No Clear Impact"
+
+            impact="No Clear Impact"
+
         else:
-            impact = "Negative Impact"
+
+            impact="Negative Impact"
+
 
         report_lines.append(f"Impact Assessment: {impact}")
 
-    final_report = "\n".join(report_lines)
 
-    with open(FINAL_OUTPUT_PATH, "w", encoding="utf-8") as f:
+    final_report="\n".join(report_lines)
+
+    with open(FINAL_OUTPUT_PATH,"w",encoding="utf-8") as f:
+
         f.write(final_report)
 
     print("\n📄 Report saved to:", FINAL_OUTPUT_PATH)
-    print("\n" + final_report)
+
+    print("\n"+final_report)
 
 
-if __name__ == "__main__":
+if __name__=="__main__":
     main()

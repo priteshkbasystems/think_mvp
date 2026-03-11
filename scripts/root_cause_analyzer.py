@@ -4,13 +4,44 @@ import os
 from datetime import datetime
 
 from scripts.utils.sentiment_utils import sentiment_label
+from scripts.topic_discovery import ComplaintTopicDiscovery
+from scripts.db_cache import save_complaint_topics
+
+from sentence_transformers import SentenceTransformer
+from sklearn.metrics.pairwise import cosine_similarity
 
 
 class RootCauseAnalyzer:
 
+    def __init__(self):
+
+        print("Loading root cause AI model...")
+
+        self.model = SentenceTransformer("all-MiniLM-L6-v2")
+
+        # Topic discovery engine
+        self.topic_engine = ComplaintTopicDiscovery()
+
+        self.root_cause_themes = {
+            "Performance Issues": "app is slow lagging loading delay",
+            "App Crashes": "application crashes freezes stuck stops working",
+            "Login Problems": "cannot login authentication otp verification password problem",
+            "App Update Issues": "problem after app update latest version issue",
+            "Payment Failures": "payment transfer transaction failed qr bill payment issue",
+            "Accessibility / UX Issues": "bad interface usability accessibility navigation ui ux"
+        }
+
+        self.theme_names = list(self.root_cause_themes.keys())
+
+        self.theme_embeddings = self.model.encode(
+            list(self.root_cause_themes.values())
+        )
+
+
     # --------------------------------------------------
     # SENTIMENT NORMALIZATION
     # --------------------------------------------------
+
     def _extract_score(self, sentiment):
 
         while isinstance(sentiment, list) and len(sentiment) > 0:
@@ -28,40 +59,49 @@ class RootCauseAnalyzer:
 
         if isinstance(sentiment, dict):
 
-            if "sentiment" in sentiment and "confidence" in sentiment:
-                label = str(sentiment.get("sentiment", "")).upper()
-                confidence = float(sentiment.get("confidence", 0))
-
-                if label == "NEGATIVE":
-                    return -confidence
-                elif label == "POSITIVE":
-                    return confidence
-                return 0.0
-
             if "label" in sentiment and "score" in sentiment:
-                label = str(sentiment.get("label", "")).upper()
-                confidence = float(sentiment.get("score", 0))
+
+                label = str(sentiment["label"]).upper()
+                score = float(sentiment["score"])
 
                 if label == "NEGATIVE":
-                    return -confidence
+                    return -score
                 elif label == "POSITIVE":
-                    return confidence
-                return 0.0
-
-            if "negative" in sentiment:
-                return -float(sentiment.get("negative", 0))
-
-            if "positive" in sentiment:
-                return float(sentiment.get("positive", 0))
+                    return score
 
         try:
             return float(sentiment)
-        except Exception:
+        except:
             return 0.0
 
+
     # --------------------------------------------------
-    # ROOT CAUSE ANALYSIS
+    # AI ROOT CAUSE CLASSIFICATION
     # --------------------------------------------------
+
+    def classify_root_cause(self, text):
+
+        embedding = self.model.encode([text])
+
+        similarities = cosine_similarity(
+            embedding,
+            self.theme_embeddings
+        )[0]
+
+        best_index = similarities.argmax()
+
+        confidence = similarities[best_index]
+
+        if confidence < 0.35:
+            return "Other Complaints"
+
+        return self.theme_names[best_index]
+
+
+    # --------------------------------------------------
+    # MAIN ANALYSIS
+    # --------------------------------------------------
+
     def analyze(self, texts, sentiments,
                 bank_name=None,
                 save_to_file=False,
@@ -77,36 +117,23 @@ class RootCauseAnalyzer:
         neutral_count = 0
         positive_count = 0
 
-        # Keyword groups
-        keyword_map = {
-            "Performance Issues": ["slow", "delay", "lag", "sluggish", "loading"],
-            "App Crashes": ["crash", "freeze", "hang", "stuck"],
-            "Login Problems": ["login", "otp", "authentication", "verify", "password"],
-            "App Update Issues": ["update", "latest version"],
-            "Payment Failures": ["payment", "transfer", "transaction", "qr", "bill"],
-            "Accessibility / UX Issues": ["accessibility", "dark mode", "developer option", "usability"]
-        }
+        negative_texts = []
 
         for text, sentiment in zip(texts, sentiments):
 
             score = self._extract_score(sentiment)
+
             label = sentiment_label(score)
 
             if label == "Negative":
 
                 negative_count += 1
-                text_lower = text.lower()
 
-                matched = False
+                negative_texts.append(text)
 
-                for category, keywords in keyword_map.items():
-                    if any(word in text_lower for word in keywords):
-                        root_causes[category] += 1
-                        matched = True
-                        break
+                cause = self.classify_root_cause(text)
 
-                if not matched:
-                    root_causes["Other Complaints"] += 1
+                root_causes[cause] += 1
 
             elif label == "Neutral":
                 neutral_count += 1
@@ -114,11 +141,27 @@ class RootCauseAnalyzer:
             else:
                 positive_count += 1
 
-        # --------------------------------------------------
-        # BUILD REPORT
-        # --------------------------------------------------
+
+        # -----------------------------------------
+        # DISCOVER NEW COMPLAINT TOPICS
+        # -----------------------------------------
+
+        topics = {}
+
+        if len(negative_texts) >= 5:
+            try:
+                topics = self.topic_engine.discover_topics(negative_texts)
+                save_complaint_topics(bank_name, topics)
+            except Exception:
+                topics = {}
+
+
+        # -----------------------------------------
+        # REPORT
+        # -----------------------------------------
 
         report_lines = []
+
         report_lines.append("🔍 ROOT CAUSE ANALYSIS")
         report_lines.append("=" * 45)
 
@@ -149,21 +192,30 @@ class RootCauseAnalyzer:
                     f"{cause}: {count} ({percentage:.1f}%)"
                 )
 
+        # -----------------------------------------
+        # EMERGING TOPICS
+        # -----------------------------------------
+
+        if topics:
+
+            report_lines.append("\n🔎 Emerging Complaint Topics:\n")
+
+            for topic_id, keywords in topics.items():
+
+                report_lines.append(
+                    f"Topic {topic_id}: {', '.join(keywords)}"
+                )
+
         report_lines.append("=" * 45)
-        report_lines.append("")
 
         final_report = "\n".join(report_lines)
-
-        # --------------------------------------------------
-        # PRINT
-        # --------------------------------------------------
 
         if verbose:
             print("\n" + final_report)
 
-        # --------------------------------------------------
-        # SAVE FILE
-        # --------------------------------------------------
+        # -----------------------------------------
+        # SAVE REPORT
+        # -----------------------------------------
 
         if save_to_file:
 
@@ -174,17 +226,13 @@ class RootCauseAnalyzer:
 
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
-            if bank_name:
-                filename = f"{bank_name}_root_cause_{timestamp}.txt"
-            else:
-                filename = f"root_cause_{timestamp}.txt"
+            filename = f"{bank_name}_root_cause_{timestamp}.txt"
 
             filepath = os.path.join(output_dir, filename)
 
             with open(filepath, "w", encoding="utf-8") as f:
                 f.write(final_report)
 
-            if verbose:
-                print(f"📄 Root cause report saved to: {filepath}")
+            print(f"\n📄 Root cause report saved to: {filepath}")
 
         return root_causes

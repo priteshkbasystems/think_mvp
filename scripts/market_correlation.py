@@ -6,9 +6,13 @@ from scipy.stats import pearsonr
 from PyPDF2 import PdfReader
 import re
 
-# OCR libraries
+# OCR
 import pytesseract
 from pdf2image import convert_from_path
+
+# AI Semantic Detection
+from sentence_transformers import SentenceTransformer
+from sklearn.metrics.pairwise import cosine_similarity
 
 
 # ==========================================
@@ -19,16 +23,40 @@ BASE_CORP_PATH = "/content/drive/MyDrive/THINK_MVP/01_Corporate_Documents"
 TREND_JSON_PATH = "/content/drive/MyDrive/THINK_MVP/04_Analysis_Output/bank_trend_data.json"
 OUTPUT_PATH = "/content/drive/MyDrive/THINK_MVP/04_Analysis_Output/strategic_market_intelligence_report.txt"
 
-TRANSFORMATION_KEYWORDS = [
-    "digital","mobile","platform","ecosystem",
-    "ai","automation","analytics",
-    "customer experience","innovation",
-    "technology","upgrade"
+
+# Strategic Transformation Themes
+TRANSFORMATION_THEMES = [
+    "digital transformation in banking",
+    "banking technology modernization",
+    "customer experience improvement",
+    "data analytics and AI in banking",
+    "automation of financial services",
+    "sustainability and ESG banking strategy",
+    "platform banking ecosystem",
+    "business model innovation in banking",
+    "portfolio optimization in banking",
+    "financial technology innovation",
+    "digital banking services expansion",
 ]
 
 
+
 # ==========================================
-# OCR EXTRACTION (FOR IMAGE PDFs)
+# LOAD EMBEDDING MODEL
+# ==========================================
+
+print("Loading AI model...")
+
+embedding_model = SentenceTransformer("all-MiniLM-L6-v2")
+
+THEME_EMBEDDINGS = embedding_model.encode(TRANSFORMATION_THEMES)
+
+print("Model loaded.")
+
+
+
+# ==========================================
+# OCR EXTRACTION
 # ==========================================
 
 def extract_text_with_ocr(pdf_path):
@@ -41,10 +69,11 @@ def extract_text_with_ocr(pdf_path):
         for img in images:
             text += pytesseract.image_to_string(img)
 
-    except Exception as e:
+    except Exception:
         print("OCR failed for:", pdf_path)
 
     return text
+
 
 
 # ==========================================
@@ -69,6 +98,7 @@ def load_sentiment_data():
         }
 
     return sentiment_data
+
 
 
 # ==========================================
@@ -119,6 +149,7 @@ def discover_banks(base_path):
     return banks
 
 
+
 # ==========================================
 # STOCK RETURNS
 # ==========================================
@@ -152,8 +183,34 @@ def compute_yearly_returns(csv_path):
     return yearly_returns
 
 
+
 # ==========================================
-# TRANSFORMATION KEYWORD SCAN
+# TRANSFORMATION SCORE USING AI
+# ==========================================
+
+def compute_transformation_score(text):
+
+    sentences = re.split(r"[.!?]", text)
+
+    sentences = [s.strip() for s in sentences if len(s.strip()) > 30]
+
+    if len(sentences) == 0:
+        return 0
+
+    sentence_embeddings = embedding_model.encode(sentences)
+
+    similarity_matrix = cosine_similarity(sentence_embeddings, THEME_EMBEDDINGS)
+
+    max_scores = similarity_matrix.max(axis=1)
+
+    score = float(np.mean(max_scores))
+
+    return score
+
+
+
+# ==========================================
+# PDF TRANSFORMATION EXTRACTION
 # ==========================================
 
 def extract_transformation_focus(folder_path):
@@ -190,7 +247,6 @@ def extract_transformation_focus(folder_path):
                 for page in reader.pages:
                     pdf_text+=page.extract_text() or ""
 
-                # If no text extracted -> use OCR
                 if len(pdf_text.strip()) < 100:
 
                     print("Running OCR for:",full_path)
@@ -199,24 +255,21 @@ def extract_transformation_focus(folder_path):
 
                 combined_text+=pdf_text
 
-            except Exception as e:
+            except Exception:
 
                 print("PDF read failed:",full_path)
 
                 continue
 
+
         combined_text=combined_text.lower()
 
-        keywords_found=[]
+        score = compute_transformation_score(combined_text)
 
-        for kw in TRANSFORMATION_KEYWORDS:
-
-            if kw in combined_text:
-                keywords_found.append(kw)
-
-        yearly_focus[year]=keywords_found
+        yearly_focus[year]=score
 
     return yearly_focus
+
 
 
 # ==========================================
@@ -246,6 +299,7 @@ def compute_correlation(sentiment,returns,lag=0):
     corr,_=pearsonr(x,y)
 
     return corr
+
 
 
 # ==========================================
@@ -287,9 +341,6 @@ def main():
         if next_corr is not None:
             report.append(f"- Next Year Correlation: {next_corr:.3f}")
 
-        if same_corr is None and next_corr is None:
-            report.append("- Insufficient overlapping data for statistical correlation.")
-
         report.append("\nYear-by-Year Strategic Breakdown:")
 
         all_years=sorted(set(
@@ -302,12 +353,10 @@ def main():
 
             report.append(f"\n📅 {year}")
 
-            focus=transformation.get(year)
-
-            if focus:
-                report.append(f"Transformation Focus: {', '.join(focus)}")
+            if year in transformation:
+                report.append(f"Transformation Intensity: {transformation[year]:.3f}")
             else:
-                report.append("Transformation Focus: Not identified")
+                report.append("Transformation Intensity: Not available")
 
             if year in sentiment:
                 s=sentiment[year]
@@ -323,21 +372,8 @@ def main():
             else:
                 report.append("Market Return: Not available")
 
-            if year in sentiment and year in returns:
-
-                s=sentiment[year]
-                r=returns[year]
-
-                if s>0 and r>0:
-                    report.append("Interpretation: Strong alignment between customer perception and market performance.")
-                elif s<0 and r>0:
-                    report.append("Interpretation: Market confidence exists despite negative customer sentiment.")
-                elif s>0 and r<0:
-                    report.append("Interpretation: Positive customer perception not reflected in market valuation.")
-                else:
-                    report.append("Interpretation: Operational or strategic challenges reflected in both sentiment and stock.")
-
         report.append("\n"+"="*60)
+
 
     final_text="\n".join(report)
 
@@ -346,6 +382,7 @@ def main():
 
     print("\nReport generated successfully.")
     print("\nSaved to:",OUTPUT_PATH)
+
 
 
 if __name__=="__main__":
