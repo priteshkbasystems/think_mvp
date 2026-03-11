@@ -6,15 +6,19 @@ from PyPDF2 import PdfReader
 from scipy.stats import pearsonr
 from trend_analysis import main as run_trend_engine
 
-# AI embeddings
 from sentence_transformers import SentenceTransformer
 from sklearn.metrics.pairwise import cosine_similarity
+
+import pytesseract
+from pdf2image import convert_from_path
 
 from scripts.db_cache import (
     init_db,
     get_file_modified_time,
     get_cached_score,
-    update_cache
+    update_cache,
+    get_embedding,
+    save_embedding
 )
 
 init_db()
@@ -27,8 +31,8 @@ BASE_CORP_PATH = "/content/drive/MyDrive/THINK_MVP/01_Corporate_Documents"
 TREND_OUTPUT_PATH = "/content/drive/MyDrive/THINK_MVP/04_Analysis_Output"
 FINAL_OUTPUT_PATH = "/content/drive/MyDrive/THINK_MVP/04_Analysis_Output/transformation_correlation_report.txt"
 
+MAX_SENTENCES = 300
 
-# Strategic Transformation Themes
 TRANSFORMATION_THEMES = [
     "digital transformation in banking",
     "banking technology modernization",
@@ -54,6 +58,60 @@ embedding_model = SentenceTransformer("all-MiniLM-L6-v2")
 THEME_EMBEDDINGS = embedding_model.encode(TRANSFORMATION_THEMES)
 
 print("Model ready.")
+
+
+# ==========================================
+# OCR EXTRACTION
+# ==========================================
+
+def extract_text_with_ocr(pdf_path):
+
+    text = ""
+
+    try:
+
+        images = convert_from_path(pdf_path, dpi=200)
+
+        for img in images:
+            text += pytesseract.image_to_string(img)
+
+    except Exception:
+        print("OCR failed for:", pdf_path)
+
+    return text.lower()
+
+
+# ==========================================
+# PDF TEXT EXTRACTION
+# ==========================================
+
+def extract_text_from_pdf(pdf_path):
+
+    try:
+
+        reader = PdfReader(pdf_path)
+
+        text = ""
+
+        for page in reader.pages:
+            text += page.extract_text() or ""
+
+        text = text.lower()
+
+        # If almost no text extracted → run OCR
+        if len(text.strip()) < 100:
+
+            print("Running OCR for:", os.path.basename(pdf_path))
+
+            text = extract_text_with_ocr(pdf_path)
+
+        return text
+
+    except Exception:
+
+        print("PDF read failed:", pdf_path)
+
+        return ""
 
 
 # ==========================================
@@ -88,7 +146,7 @@ def discover_banks(base_path):
             if sub_lower == "annual_reports":
                 components["annual_reports"] = sub_path
 
-            elif sub_lower in ["investor_presentations","investors_presentations"]:
+            elif sub_lower in ["investor_presentations", "investors_presentations"]:
                 components["investor_presentations"] = sub_path
 
         banks[bank_folder] = components
@@ -97,28 +155,7 @@ def discover_banks(base_path):
 
 
 # ==========================================
-# PDF TEXT EXTRACTION
-# ==========================================
-
-def extract_text_from_pdf(pdf_path):
-
-    try:
-
-        reader = PdfReader(pdf_path)
-
-        text = ""
-
-        for page in reader.pages:
-            text += page.extract_text() or ""
-
-        return text.lower()
-
-    except:
-        return ""
-
-
-# ==========================================
-# YEAR FROM FOLDER
+# EXTRACT YEAR
 # ==========================================
 
 def extract_year_from_path(path):
@@ -132,7 +169,7 @@ def extract_year_from_path(path):
 
 
 # ==========================================
-# AI TRANSFORMATION SCORE
+# TRANSFORMATION SCORE
 # ==========================================
 
 def compute_transformation_score(text):
@@ -141,12 +178,31 @@ def compute_transformation_score(text):
 
     sentences = [s.strip() for s in sentences if len(s.strip()) > 30]
 
+    sentences = sentences[:MAX_SENTENCES]
+
     if not sentences:
         return 0
 
-    sentence_embeddings = embedding_model.encode(sentences)
+    sentence_embeddings = []
 
-    similarity_matrix = cosine_similarity(sentence_embeddings, THEME_EMBEDDINGS)
+    for sentence in sentences:
+
+        emb = get_embedding(sentence)
+
+        if emb is None:
+
+            emb = embedding_model.encode([sentence])[0]
+
+            save_embedding(sentence, emb)
+
+        sentence_embeddings.append(emb)
+
+    sentence_embeddings = np.array(sentence_embeddings)
+
+    similarity_matrix = cosine_similarity(
+        sentence_embeddings,
+        THEME_EMBEDDINGS
+    )
 
     max_scores = similarity_matrix.max(axis=1)
 
@@ -156,7 +212,7 @@ def compute_transformation_score(text):
 
 
 # ==========================================
-# SCAN FOLDER
+# SCAN PDF FOLDER
 # ==========================================
 
 def compute_scores_from_folder(folder_path):
@@ -174,6 +230,8 @@ def compute_scores_from_folder(folder_path):
                 continue
 
             full_path = os.path.join(root, file)
+
+            print("Processing PDF:", file)
 
             year = extract_year_from_path(root)
 
@@ -203,7 +261,7 @@ def compute_scores_from_folder(folder_path):
 
 
 # ==========================================
-# NORMALIZE SCORES
+# NORMALIZE
 # ==========================================
 
 def normalize_scores(scores):
@@ -244,7 +302,7 @@ def load_sentiment_trend():
 
         return {}
 
-    with open(trend_file,"r",encoding="utf-8") as f:
+    with open(trend_file, "r", encoding="utf-8") as f:
 
         raw_data = json.load(f)
 
@@ -255,7 +313,6 @@ def load_sentiment_trend():
         sentiment_data[bank_name] = {
 
             int(year): score
-
             for year, score in bank_data["yearly_sentiment"].items()
 
         }
@@ -272,7 +329,6 @@ def compute_correlation(transformation_scores, sentiment_scores):
     overlapping_years = sorted(
 
         set(transformation_scores.keys()) &
-
         set(year - 1 for year in sentiment_scores.keys())
 
     )
@@ -280,8 +336,8 @@ def compute_correlation(transformation_scores, sentiment_scores):
     if len(overlapping_years) < 2:
         return None
 
-    x=[]
-    y=[]
+    x = []
+    y = []
 
     for year in overlapping_years:
 
@@ -290,13 +346,12 @@ def compute_correlation(transformation_scores, sentiment_scores):
         if next_year in sentiment_scores:
 
             x.append(transformation_scores[year])
-
             y.append(sentiment_scores[next_year])
 
     if len(x) < 2:
         return None
 
-    correlation,_ = pearsonr(x,y)
+    correlation, _ = pearsonr(x, y)
 
     return correlation
 
@@ -320,7 +375,7 @@ def main():
 
     for bank_folder, components in banks.items():
 
-        display_name = bank_folder.replace("_"," ")
+        display_name = bank_folder.replace("_", " ")
 
         print(f"\nAnalyzing {display_name}...")
 
@@ -330,24 +385,20 @@ def main():
 
         transformation_scores = annual_scores.copy()
 
-        for year,score in investor_scores.items():
+        for year, score in investor_scores.items():
 
             if year in transformation_scores:
 
                 transformation_scores[year] = (
-
                     transformation_scores[year] + score
-
                 ) / 2
 
             else:
-
                 transformation_scores[year] = score
-
 
         transformation_scores = normalize_scores(transformation_scores)
 
-        sentiment_scores = sentiment_trends.get(display_name,{})
+        sentiment_scores = sentiment_trends.get(display_name, {})
 
         correlation = compute_correlation(transformation_scores, sentiment_scores)
 
@@ -356,47 +407,32 @@ def main():
         if correlation is None:
 
             report_lines.append("Insufficient data for correlation.")
-
             continue
 
-
         report_lines.append(
-
             f"Correlation (Transformation → Next Year Sentiment): {correlation:.3f}"
-
         )
 
-
         if correlation > 0.7:
-
-            impact="High Positive Impact"
-
+            impact = "High Positive Impact"
         elif correlation > 0.3:
-
-            impact="Moderate Positive Impact"
-
+            impact = "Moderate Positive Impact"
         elif correlation > -0.3:
-
-            impact="No Clear Impact"
-
+            impact = "No Clear Impact"
         else:
-
-            impact="Negative Impact"
-
+            impact = "Negative Impact"
 
         report_lines.append(f"Impact Assessment: {impact}")
 
+    final_report = "\n".join(report_lines)
 
-    final_report="\n".join(report_lines)
-
-    with open(FINAL_OUTPUT_PATH,"w",encoding="utf-8") as f:
-
+    with open(FINAL_OUTPUT_PATH, "w", encoding="utf-8") as f:
         f.write(final_report)
 
     print("\n📄 Report saved to:", FINAL_OUTPUT_PATH)
 
-    print("\n"+final_report)
+    print("\n" + final_report)
 
 
-if __name__=="__main__":
+if __name__ == "__main__":
     main()

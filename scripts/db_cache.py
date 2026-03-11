@@ -97,6 +97,14 @@ def init_db():
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
     """)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS embedding_cache (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        text_hash TEXT UNIQUE,
+        embedding BLOB,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+    """)
     conn.commit()
     conn.close()
 
@@ -281,6 +289,10 @@ def save_review_sentiment(bank, year, text, rating, score, label):
     conn.commit()
     conn.close()
 
+# ==========================================
+# COMPLAINT TOPICS CACHE
+# ==========================================
+
 def save_complaint_topics(bank_name, topics):
 
     conn = sqlite3.connect(DB_PATH)
@@ -293,6 +305,54 @@ def save_complaint_topics(bank_name, topics):
             (bank_name, topic_id, keywords)
             VALUES (?, ?, ?)
         """, (bank_name, topic_id, ",".join(keywords)))
+
+    conn.commit()
+    conn.close()
+
+# ==========================================
+# EMBEDDING CACHE
+# ==========================================
+
+def get_embedding(text):
+
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+
+    text_hash = hashlib.md5(text.encode()).hexdigest()
+
+    cursor.execute(
+        "SELECT embedding FROM embedding_cache WHERE text_hash=?",
+        (text_hash,)
+    )
+
+    row = cursor.fetchone()
+
+    conn.close()
+
+    if row:
+        return np.frombuffer(row[0], dtype=np.float32)
+
+    return None
+
+# ==========================================
+# SAVE EMBEDDING
+# ==========================================
+
+def save_embedding(text, embedding):
+
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+
+    text_hash = hashlib.md5(text.encode()).hexdigest()
+
+    cursor.execute(
+        """
+        INSERT OR IGNORE INTO embedding_cache
+        (text_hash, embedding)
+        VALUES (?, ?)
+        """,
+        (text_hash, embedding.astype(np.float32).tobytes())
+    )
 
     conn.commit()
     conn.close()

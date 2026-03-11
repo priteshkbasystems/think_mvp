@@ -5,12 +5,14 @@ import numpy as np
 from scipy.stats import pearsonr
 from PyPDF2 import PdfReader
 import re
+import sqlite3
+import hashlib
 
 # OCR
 import pytesseract
 from pdf2image import convert_from_path
 
-# AI Semantic Detection
+# AI
 from sentence_transformers import SentenceTransformer
 from sklearn.metrics.pairwise import cosine_similarity
 
@@ -23,8 +25,11 @@ BASE_CORP_PATH = "/content/drive/MyDrive/THINK_MVP/01_Corporate_Documents"
 TREND_JSON_PATH = "/content/drive/MyDrive/THINK_MVP/04_Analysis_Output/bank_trend_data.json"
 OUTPUT_PATH = "/content/drive/MyDrive/THINK_MVP/04_Analysis_Output/strategic_market_intelligence_report.txt"
 
+DB_PATH = "/content/drive/MyDrive/THINK_MVP/04_Analysis_Output/transformation_cache.db"
 
-# Strategic Transformation Themes
+MAX_SENTENCES = 300  # prevents extremely slow embedding
+
+
 TRANSFORMATION_THEMES = [
     "digital transformation in banking",
     "banking technology modernization",
@@ -40,9 +45,70 @@ TRANSFORMATION_THEMES = [
 ]
 
 
+# ==========================================
+# INIT DATABASE
+# ==========================================
+
+def init_db():
+
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS embedding_cache (
+        text_hash TEXT PRIMARY KEY,
+        embedding BLOB
+    )
+    """)
+
+    conn.commit()
+    conn.close()
+
 
 # ==========================================
-# LOAD EMBEDDING MODEL
+# EMBEDDING CACHE
+# ==========================================
+
+def get_embedding(text):
+
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+
+    text_hash = hashlib.md5(text.encode()).hexdigest()
+
+    cursor.execute(
+        "SELECT embedding FROM embedding_cache WHERE text_hash=?",
+        (text_hash,)
+    )
+
+    row = cursor.fetchone()
+    conn.close()
+
+    if row:
+        return np.frombuffer(row[0], dtype=np.float32)
+
+    return None
+
+
+def save_embedding(text, embedding):
+
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+
+    text_hash = hashlib.md5(text.encode()).hexdigest()
+
+    cursor.execute("""
+    INSERT OR IGNORE INTO embedding_cache
+    (text_hash, embedding)
+    VALUES (?,?)
+    """, (text_hash, embedding.astype(np.float32).tobytes()))
+
+    conn.commit()
+    conn.close()
+
+
+# ==========================================
+# LOAD MODEL
 # ==========================================
 
 print("Loading AI model...")
@@ -51,17 +117,16 @@ embedding_model = SentenceTransformer("all-MiniLM-L6-v2")
 
 THEME_EMBEDDINGS = embedding_model.encode(TRANSFORMATION_THEMES)
 
-print("Model loaded.")
-
+print("Model ready")
 
 
 # ==========================================
-# OCR EXTRACTION
+# OCR
 # ==========================================
 
 def extract_text_with_ocr(pdf_path):
 
-    text = ""
+    text=""
 
     try:
         images = convert_from_path(pdf_path, dpi=200)
@@ -69,11 +134,10 @@ def extract_text_with_ocr(pdf_path):
         for img in images:
             text += pytesseract.image_to_string(img)
 
-    except Exception:
-        print("OCR failed for:", pdf_path)
+    except:
+        print("OCR failed:", pdf_path)
 
     return text
-
 
 
 # ==========================================
@@ -100,9 +164,8 @@ def load_sentiment_data():
     return sentiment_data
 
 
-
 # ==========================================
-# DISCOVER BANKS
+# BANK DISCOVERY
 # ==========================================
 
 def discover_banks(base_path):
@@ -149,7 +212,6 @@ def discover_banks(base_path):
     return banks
 
 
-
 # ==========================================
 # STOCK RETURNS
 # ==========================================
@@ -183,9 +245,8 @@ def compute_yearly_returns(csv_path):
     return yearly_returns
 
 
-
 # ==========================================
-# TRANSFORMATION SCORE USING AI
+# TRANSFORMATION SCORE
 # ==========================================
 
 def compute_transformation_score(text):
@@ -194,23 +255,38 @@ def compute_transformation_score(text):
 
     sentences = [s.strip() for s in sentences if len(s.strip()) > 30]
 
+    sentences = sentences[:MAX_SENTENCES]   # speed limit
+
     if len(sentences) == 0:
         return 0
 
-    sentence_embeddings = embedding_model.encode(sentences)
+    sentence_embeddings=[]
+
+    for sentence in sentences:
+
+        emb = get_embedding(sentence)
+
+        if emb is None:
+
+            emb = embedding_model.encode([sentence])[0]
+
+            save_embedding(sentence, emb)
+
+        sentence_embeddings.append(emb)
+
+    sentence_embeddings=np.array(sentence_embeddings)
 
     similarity_matrix = cosine_similarity(sentence_embeddings, THEME_EMBEDDINGS)
 
     max_scores = similarity_matrix.max(axis=1)
 
-    score = float(np.mean(max_scores))
+    score=float(np.mean(max_scores))
 
     return score
 
 
-
 # ==========================================
-# PDF TRANSFORMATION EXTRACTION
+# PDF EXTRACTION
 # ==========================================
 
 def extract_transformation_focus(folder_path):
@@ -238,6 +314,8 @@ def extract_transformation_focus(folder_path):
 
             full_path=os.path.join(root,file)
 
+            print("Processing PDF:",file)
+
             try:
 
                 reader=PdfReader(full_path)
@@ -249,18 +327,15 @@ def extract_transformation_focus(folder_path):
 
                 if len(pdf_text.strip()) < 100:
 
-                    print("Running OCR for:",full_path)
+                    print("Running OCR:",file)
 
                     pdf_text=extract_text_with_ocr(full_path)
 
                 combined_text+=pdf_text
 
-            except Exception:
+            except:
 
-                print("PDF read failed:",full_path)
-
-                continue
-
+                print("Failed:",file)
 
         combined_text=combined_text.lower()
 
@@ -269,7 +344,6 @@ def extract_transformation_focus(folder_path):
         yearly_focus[year]=score
 
     return yearly_focus
-
 
 
 # ==========================================
@@ -286,9 +360,7 @@ def compute_correlation(sentiment,returns,lag=0):
 
         if target in returns:
 
-            aligned.append(
-                (year,sentiment[year],returns[target])
-            )
+            aligned.append((year,sentiment[year],returns[target]))
 
     if len(aligned)<2:
         return None
@@ -301,12 +373,13 @@ def compute_correlation(sentiment,returns,lag=0):
     return corr
 
 
-
 # ==========================================
 # MAIN
 # ==========================================
 
 def main():
+
+    init_db()
 
     sentiment_data=load_sentiment_data()
 
@@ -318,6 +391,8 @@ def main():
     report.append("=================================================\n")
 
     for bank,components in banks.items():
+
+        print("\nAnalyzing:",bank)
 
         report.append(f"\n🏦 {bank}")
         report.append("-"*(len(bank)+3))
@@ -335,42 +410,18 @@ def main():
 
         report.append("\nExecutive Summary:")
 
-        if same_corr is not None:
+        if same_corr:
             report.append(f"- Same Year Correlation: {same_corr:.3f}")
 
-        if next_corr is not None:
+        if next_corr:
             report.append(f"- Next Year Correlation: {next_corr:.3f}")
 
         report.append("\nYear-by-Year Strategic Breakdown:")
 
-        all_years=sorted(set(
-            list(sentiment.keys())+
-            list(returns.keys())+
-            list(transformation.keys())
-        ))
-
-        for year in all_years:
+        for year in sorted(transformation.keys()):
 
             report.append(f"\n📅 {year}")
-
-            if year in transformation:
-                report.append(f"Transformation Intensity: {transformation[year]:.3f}")
-            else:
-                report.append("Transformation Intensity: Not available")
-
-            if year in sentiment:
-                s=sentiment[year]
-                mood="Positive" if s>0 else "Negative"
-                report.append(f"Customer Sentiment: {s:.3f} ({mood})")
-            else:
-                report.append("Customer Sentiment: Not available")
-
-            if year in returns:
-                r=returns[year]
-                direction="Positive" if r>0 else "Negative"
-                report.append(f"Market Return: {r:.3f} ({direction})")
-            else:
-                report.append("Market Return: Not available")
+            report.append(f"Transformation Intensity: {transformation[year]:.3f}")
 
         report.append("\n"+"="*60)
 
@@ -380,9 +431,8 @@ def main():
     with open(OUTPUT_PATH,"w") as f:
         f.write(final_text)
 
-    print("\nReport generated successfully.")
-    print("\nSaved to:",OUTPUT_PATH)
-
+    print("\nReport generated successfully")
+    print("Saved to:",OUTPUT_PATH)
 
 
 if __name__=="__main__":
