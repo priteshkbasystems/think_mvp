@@ -6,6 +6,11 @@ from scipy.stats import pearsonr
 from PyPDF2 import PdfReader
 import re
 
+# OCR libraries
+import pytesseract
+from pdf2image import convert_from_path
+
+
 # ==========================================
 # CONFIG
 # ==========================================
@@ -20,6 +25,27 @@ TRANSFORMATION_KEYWORDS = [
     "customer experience","innovation",
     "technology","upgrade"
 ]
+
+
+# ==========================================
+# OCR EXTRACTION (FOR IMAGE PDFs)
+# ==========================================
+
+def extract_text_with_ocr(pdf_path):
+
+    text = ""
+
+    try:
+        images = convert_from_path(pdf_path, dpi=200)
+
+        for img in images:
+            text += pytesseract.image_to_string(img)
+
+    except Exception as e:
+        print("OCR failed for:", pdf_path)
+
+    return text
+
 
 # ==========================================
 # LOAD SENTIMENT
@@ -156,12 +182,27 @@ def extract_transformation_focus(folder_path):
             full_path=os.path.join(root,file)
 
             try:
+
                 reader=PdfReader(full_path)
 
-                for page in reader.pages:
-                    combined_text+=page.extract_text() or ""
+                pdf_text=""
 
-            except:
+                for page in reader.pages:
+                    pdf_text+=page.extract_text() or ""
+
+                # If no text extracted -> use OCR
+                if len(pdf_text.strip()) < 100:
+
+                    print("Running OCR for:",full_path)
+
+                    pdf_text=extract_text_with_ocr(full_path)
+
+                combined_text+=pdf_text
+
+            except Exception as e:
+
+                print("PDF read failed:",full_path)
+
                 continue
 
         combined_text=combined_text.lower()

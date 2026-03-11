@@ -50,10 +50,10 @@ def sentiment_label(score):
     Convert sentiment score to label
     """
 
-    if score >= 0.2:
+    if score >= 0.15:
         return "Positive"
 
-    elif score <= -0.2:
+    elif score <= -0.15:
         return "Negative"
 
     else:
