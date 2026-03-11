@@ -1,5 +1,7 @@
 import os
 import sqlite3
+import hashlib
+import numpy as np
 
 DB_PATH = "/content/drive/MyDrive/THINK_MVP/04_Analysis_Output/transformation_cache.db"
 
@@ -59,19 +61,6 @@ def init_db():
         )
     """)
 
-
-    # ------------------------------
-    # Sentiment scores
-    # ------------------------------
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS sentiment_scores (
-            bank_name TEXT,
-            year INTEGER,
-            sentiment REAL,
-            contradiction_ratio REAL,
-            PRIMARY KEY (bank_name, year)
-        )
-    """)
 
     # ------------------------------
     # Review sentiments
