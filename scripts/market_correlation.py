@@ -362,17 +362,18 @@ def compute_transformation_score(text):
 
     max_scores = similarity_matrix.max(axis=1)
 
-    # Ignore weak semantic matches
     threshold = 0.45
 
-    filtered_scores = [s for s in max_scores if s > threshold]
+    # Count sentences that strongly match transformation themes
+    strong_matches = [s for s in max_scores if s > threshold]
 
-    # If no strong transformation sentences found
-    if len(filtered_scores) == 0:
+    total_sentences = len(max_scores)
+
+    if total_sentences == 0:
         return 0.0
 
-    # Average only strong matches
-    score = float(np.mean(filtered_scores))
+    # score = proportion of transformation sentences
+    score = len(strong_matches) / total_sentences
 
     return score
 
