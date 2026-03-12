@@ -362,7 +362,17 @@ def compute_transformation_score(text):
 
     max_scores = similarity_matrix.max(axis=1)
 
-    score=float(np.mean(max_scores))
+    # Ignore weak semantic matches
+    threshold = 0.45
+
+    filtered_scores = [s for s in max_scores if s > threshold]
+
+    # If no strong transformation sentences found
+    if len(filtered_scores) == 0:
+        return 0.0
+
+    # Average only strong matches
+    score = float(np.mean(filtered_scores))
 
     return score
 
