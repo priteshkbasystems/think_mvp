@@ -47,18 +47,20 @@ TRANSFORMATION_THEMES = [
 
     # Digital Transformation Core
     "digital transformation",
+    "digital banking strategy",
     "digital banking",
-    "digital strategy",
     "digital operating model",
-    "digital innovation",
+    "technology driven banking",
+    "digital capability",
+    "digital organization",
 
     # Customer Experience Transformation
     "digital customer experience",
-    "customer experience",
     "customer journey",
     "omnichannel banking",
     "mobile banking",
-    "personalized banking",
+    "personalized financial services",
+    "digital service channels",
 
     # Artificial Intelligence & Data
     "artificial intelligence",
@@ -68,22 +70,24 @@ TRANSFORMATION_THEMES = [
     "data analytics",
     "predictive analytics",
     "data driven",
-    "big data",
     "data platform",
+    "big data",
 
     # Automation & Efficiency
     "automation",
+    "process automation",
     "robotic process automation",
     "RPA",
     "intelligent automation",
-    "process automation",
     "operational efficiency",
+    "digitization of processes",
 
     # Digital Banking Platforms
-    "mobile banking platform",
-    "online banking",
     "digital platform",
-    "next generation banking platform",
+    "mobile banking platform",
+    "online banking platform",
+    "digital banking platform",
+    "next generation banking",
     "platform banking",
 
     # Payments Innovation
@@ -93,6 +97,7 @@ TRANSFORMATION_THEMES = [
     "contactless payment",
     "QR payment",
     "mobile wallet",
+    "digital payment ecosystem",
 
     # Fintech & Ecosystem
     "fintech",
@@ -102,28 +107,31 @@ TRANSFORMATION_THEMES = [
     "platform ecosystem",
     "banking as a service",
     "API banking",
-    "developer platform",
+    "digital ecosystem",
 
     # Cloud & Infrastructure
+    "cloud",
     "cloud computing",
     "cloud infrastructure",
-    "cloud native",
-    "microservices",
     "core banking modernization",
     "IT modernization",
+    "microservices",
+    "technology infrastructure",
 
     # Cybersecurity & Digital Risk
     "cybersecurity",
     "digital security",
     "digital identity",
+    "authentication",
     "fraud detection",
-    "authentication platform",
 
     # Innovation & R&D
     "innovation lab",
     "innovation center",
-    "research and development",
     "technology innovation",
+    "digital innovation",
+    "research and development",
+    "venture investment",
     "digital product innovation",
 
     # ESG & Sustainable Transformation
@@ -136,9 +144,10 @@ TRANSFORMATION_THEMES = [
     # Business Model Transformation
     "business model transformation",
     "digital first strategy",
-    "branch to digital",
+    "banking transformation",
     "future of banking",
-    "banking transformation"
+    "branch to digital",
+    "technology driven bank"
 ]
 
 # ==========================================
