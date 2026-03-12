@@ -34,16 +34,87 @@ FINAL_OUTPUT_PATH = "/content/drive/MyDrive/THINK_MVP/04_Analysis_Output/transfo
 MAX_SENTENCES = 300
 
 TRANSFORMATION_THEMES = [
+
+    # Digital Transformation Core
     "digital transformation in banking",
     "banking technology modernization",
-    "customer experience improvement",
-    "data analytics and AI in banking",
-    "automation of financial services",
-    "sustainability and ESG banking strategy",
-    "platform banking ecosystem",
+    "digital banking strategy",
+    "digital operating model transformation",
+    "technology driven banking innovation",
+
+    # Customer Experience Transformation
+    "digital customer experience in banking",
+    "customer journey digitalization",
+    "omnichannel banking experience",
+    "mobile banking experience improvement",
+    "personalized digital financial services",
+
+    # Artificial Intelligence & Data
+    "artificial intelligence in banking",
+    "machine learning for financial services",
+    "data analytics driven banking strategy",
+    "predictive analytics for banking",
+    "data driven decision making in banking",
+    "big data platforms for banking",
+
+    # Automation & Efficiency
+    "automation of banking operations",
+    "robotic process automation in banking",
+    "intelligent automation in financial services",
+    "operational efficiency through technology",
+    "automated loan processing systems",
+
+    # Digital Banking Platforms
+    "mobile banking platform development",
+    "online banking platform modernization",
+    "digital banking service expansion",
+    "next generation banking platforms",
+    "platform based banking architecture",
+
+    # Payments Innovation
+    "digital payment ecosystem",
+    "real time payments infrastructure",
+    "contactless payment technologies",
+    "mobile wallet solutions",
+    "cross border digital payments",
+
+    # Fintech & Ecosystem
+    "fintech partnerships and collaboration",
+    "open banking ecosystem development",
+    "banking platform ecosystems",
+    "banking as a service platforms",
+    "api driven banking services",
+
+    # Cloud & Infrastructure
+    "cloud infrastructure for banking systems",
+    "cloud native banking architecture",
+    "modern core banking systems",
+    "banking infrastructure modernization",
+    "microservices architecture in banking",
+
+    # Cybersecurity & Digital Risk
+    "cybersecurity transformation in banking",
+    "digital identity and authentication",
+    "fraud detection using AI",
+    "secure digital banking platforms",
+
+    # Innovation & R&D
+    "financial innovation strategy",
+    "bank innovation labs and research",
+    "technology innovation in financial services",
+    "digital product innovation",
+
+    # ESG & Sustainable Transformation
+    "sustainability transformation in banking",
+    "green finance digital platforms",
+    "ESG driven banking innovation",
+    "sustainable finance technology solutions",
+
+    # Business Model Transformation
     "business model innovation in banking",
-    "portfolio optimization in banking",
-    "financial technology innovation"
+    "digital first banking strategy",
+    "branch to digital transformation",
+    "future of banking operating models",
 ]
 
 
