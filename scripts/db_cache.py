@@ -94,6 +94,67 @@ def init_db():
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
     """)
+
+    # ==========================================
+    # DASHBOARD NARRATIVE SCORE
+    # ==========================================
+
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS narrative_scores (
+    bank_name TEXT,
+    year INTEGER,
+    score REAL,
+    PRIMARY KEY(bank_name, year)
+    )
+    """)
+
+    # ==========================================
+    # CORRELATION BETWEEN NARRATIVE AND SENTIMENT
+    # ==========================================
+
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS narrative_sentiment_correlation (
+    bank_name TEXT PRIMARY KEY,
+    correlation REAL
+    )
+    """)
+
+    # ==========================================
+    # NARRATIVE → SENTIMENT LAG
+    # ==========================================
+
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS narrative_lag (
+    bank_name TEXT PRIMARY KEY,
+    lag_months INTEGER
+    )
+    """)
+
+    # ==========================================
+    # SENTIMENT PREDICTION
+    # ==========================================
+
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS sentiment_predictions (
+    bank_name TEXT,
+    year INTEGER,
+    predicted_sentiment REAL,
+    PRIMARY KEY(bank_name, year)
+    )
+    """)
+
+    # ==========================================
+    # NARRATIVE HIGHLIGHTS
+    # ==========================================
+
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS narrative_highlights (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    bank_name TEXT,
+    year INTEGER,
+    highlight TEXT
+    )
+    """)
     conn.commit()
     conn.close()
 

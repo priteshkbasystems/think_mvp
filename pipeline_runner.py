@@ -37,7 +37,7 @@ except Exception as e:
 
 
 # ==========================================
-# STEP 3 — TRANSFORMATION CORRELATION
+# STEP 3 — TRANSFORMATION INTELLIGENCE
 # ==========================================
 
 try:
@@ -52,11 +52,41 @@ except Exception as e:
 
 
 # ==========================================
-# STEP 4 — STRATEGIC MARKET INTELLIGENCE
+# STEP 4 — CORPORATE NARRATIVE SCORE
 # ==========================================
 
 try:
-    print("\nSTEP 4: Running Strategic Market Intelligence\n")
+    print("\nSTEP 4: Generating Corporate Narrative Scores\n")
+
+    from scripts.narrative_score_generator import generate_narrative_scores
+    generate_narrative_scores()
+
+except Exception as e:
+    print("❌ Narrative Score Generator Failed:", e)
+    sys.exit(1)
+
+
+# ==========================================
+# STEP 5 — DASHBOARD DATA ENGINE
+# ==========================================
+
+try:
+    print("\nSTEP 5: Generating Dashboard Analytics Data\n")
+
+    from scripts.dashboard_data_engine import main as run_dashboard_engine
+    run_dashboard_engine()
+
+except Exception as e:
+    print("❌ Dashboard Data Engine Failed:", e)
+    sys.exit(1)
+
+
+# ==========================================
+# STEP 6 — STRATEGIC MARKET INTELLIGENCE
+# ==========================================
+
+try:
+    print("\nSTEP 6: Running Strategic Market Intelligence\n")
 
     from scripts.strategic_market_intelligence import main as run_market
     run_market()
@@ -67,11 +97,11 @@ except Exception as e:
 
 
 # ==========================================
-# STEP 5 — AI EXECUTIVE INSIGHTS
+# STEP 7 — AI EXECUTIVE INSIGHTS
 # ==========================================
 
 try:
-    print("\nSTEP 5: Generating AI Executive Insights\n")
+    print("\nSTEP 7: Generating AI Executive Insights\n")
 
     from scripts.ai_insight_generator import main as run_ai
     run_ai()
@@ -98,6 +128,15 @@ print("• bank_trend_data.json")
 print("• transformation_correlation_report.txt")
 print("• strategic_market_intelligence_report.txt")
 print("• executive_ai_insights.txt")
+
+print("\n📊 Generated Dashboard Data (Database):\n")
+
+print("• narrative_scores")
+print("• complaint_topics")
+print("• narrative_sentiment_correlation")
+print("• narrative_lag")
+print("• sentiment_predictions")
+print("• narrative_highlights")
 
 print("\n📂 Location:")
 print("/content/drive/MyDrive/THINK_MVP/04_Analysis_Output\n")
