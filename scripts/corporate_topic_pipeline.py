@@ -4,7 +4,7 @@ from scripts.transformation_correlation import extract_text_from_pdf
 from scripts.db_cache import save_corporate_topic_sentiment
 
 
-BASE_CORP_PATH = "/content/drive/MyDrive/THINK_MVP/01_Input_Data"
+BASE_CORP_PATH = "/content/drive/MyDrive/THINK_MVP/01_Corporate_Documents"
 
 
 def extract_year(path):
