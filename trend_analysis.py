@@ -1,38 +1,48 @@
 import os
 import json
+import sqlite3
 import pandas as pd
 from collections import defaultdict
+import hashlib
+from concurrent.futures import ProcessPoolExecutor
+import multiprocessing
 
 from models.sentiment_model import SentimentModel
 from scripts.utils.sentiment_utils import sentiment_label
-from scripts.db_cache import save_sentiment_score
-from scripts.db_cache import save_review_sentiment
 from scripts.progress_tracker import ProgressTracker
 
 
 BASE_CORP_PATH = "/content/drive/MyDrive/THINK_MVP/01_Corporate_Documents"
-OUTPUT_PATH = "/content/drive/MyDrive/THINK_MVP/04_Analysis_Output/bank_trend_report.txt"
+DB_PATH = "/content/drive/MyDrive/THINK_MVP/04_Analysis_Output/transformation_cache.db"
 JSON_OUTPUT_PATH = "/content/drive/MyDrive/THINK_MVP/04_Analysis_Output/bank_trend_data.json"
 
 TEXT_WEIGHT = 0.7
 RATING_WEIGHT = 0.3
 CONTRADICTION_THRESHOLD = 0.8
 
-BATCH_SIZE = 128
+BATCH_SIZE = 256
 STEP_NAME = "STEP 2 — SENTIMENT TREND"
 
 
-# -----------------------------------------
+# --------------------------------------------------
+# Generate review hash
+# --------------------------------------------------
+
+def review_hash(text):
+    return hashlib.md5(text.encode("utf-8")).hexdigest()
+
+
+# --------------------------------------------------
 # Normalize rating
-# -----------------------------------------
+# --------------------------------------------------
 
 def normalize_rating(star_rating):
     return (star_rating - 3) / 2
 
 
-# -----------------------------------------
+# --------------------------------------------------
 # Fuse sentiment
-# -----------------------------------------
+# --------------------------------------------------
 
 def fuse_sentiment(text_score, rating):
 
@@ -48,15 +58,16 @@ def fuse_sentiment(text_score, rating):
     return final, contradiction
 
 
-# -----------------------------------------
+# --------------------------------------------------
 # Discover review folders
-# -----------------------------------------
+# --------------------------------------------------
 
 def discover_review_folders(base_path):
 
     banks = {}
 
     if not os.path.exists(base_path):
+        print("⚠ Base path not found:", base_path)
         return banks
 
     for bank_folder in os.listdir(base_path):
@@ -77,9 +88,9 @@ def discover_review_folders(base_path):
     return banks
 
 
-# -----------------------------------------
-# Load reviews (ALL Excel Sheets)
-# -----------------------------------------
+# --------------------------------------------------
+# Load reviews (ALL Excel sheets)
+# --------------------------------------------------
 
 def load_reviews(folder):
 
@@ -94,11 +105,8 @@ def load_reviews(folder):
 
         try:
             xls = pd.ExcelFile(path)
-        except Exception as e:
-            print("⚠ Cannot open file:", file, e)
+        except:
             continue
-
-        print(f"\n📄 Loading file: {file}")
 
         for sheet in xls.sheet_names:
 
@@ -107,10 +115,7 @@ def load_reviews(folder):
             except:
                 continue
 
-            print(f"   → Sheet: {sheet}")
-
             if "Date" not in df.columns or "review" not in df.columns:
-                print("   ⚠ Required columns missing. Skipping.")
                 continue
 
             df["Date"] = pd.to_datetime(
@@ -122,7 +127,6 @@ def load_reviews(folder):
             df = df.dropna(subset=["Date"])
 
             df["review"] = df["review"].astype(str)
-            df = df[df["review"].str.strip() != ""]
 
             if "Rating" in df.columns:
                 df["Rating"] = pd.to_numeric(df["Rating"], errors="coerce")
@@ -131,20 +135,21 @@ def load_reviews(folder):
 
             for _, row in df.iterrows():
 
-                year = int(row["Date"].year)
+                text = row["review"]
 
                 data.append({
-                    "year": year,
-                    "text": row["review"],
-                    "rating": row["Rating"]
+                    "year": int(row["Date"].year),
+                    "text": text,
+                    "rating": row["Rating"],
+                    "hash": review_hash(text)
                 })
 
     return data
 
 
-# -----------------------------------------
+# --------------------------------------------------
 # Detect trend
-# -----------------------------------------
+# --------------------------------------------------
 
 def detect_trend(sentiments):
 
@@ -164,143 +169,193 @@ def detect_trend(sentiments):
     return "Stable"
 
 
-# -----------------------------------------
-# Main Engine
-# -----------------------------------------
+# --------------------------------------------------
+# Bulk insert reviews
+# --------------------------------------------------
 
-def main():
+def bulk_insert_reviews(cursor, rows):
+
+    cursor.executemany(
+        """
+        INSERT OR IGNORE INTO review_sentiments
+        (bank_name, year, review_text, review_hash, rating, sentiment_score, sentiment_label)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        """,
+        rows
+    )
+
+
+# --------------------------------------------------
+# Filter already processed reviews
+# --------------------------------------------------
+
+def filter_new_reviews(cursor, items):
+
+    new_items = []
+
+    for item in items:
+
+        cursor.execute(
+            "SELECT 1 FROM review_sentiments WHERE review_hash=? LIMIT 1",
+            (item["hash"],)
+        )
+
+        if cursor.fetchone() is None:
+            new_items.append(item)
+
+    return new_items
+
+
+# --------------------------------------------------
+# Worker
+# --------------------------------------------------
+
+def process_bank(args):
+
+    bank, path = args
 
     sentiment_model = SentimentModel()
     tracker = ProgressTracker()
 
-    banks = discover_review_folders(BASE_CORP_PATH)
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
 
-    trend_results = {}
-    report_lines = []
+    data = load_reviews(path)
 
-    print("\n🚀 Running Optimized Sentiment Engine\n")
+    if len(data) == 0:
+        return bank, None
 
-    for bank, path in banks.items():
+    year_groups = defaultdict(list)
 
-        data = load_reviews(path)
+    for d in data:
+        year_groups[d["year"]].append(d)
 
-        if len(data) == 0:
-            print("⚠ No reviews:", bank)
+    year_sentiments = {}
+    yearly_contradictions = {}
+
+    print("\n🏦 Processing:", bank)
+
+    for year in sorted(year_groups.keys()):
+
+        items = year_groups[year]
+
+        items = filter_new_reviews(cursor, items)
+
+        if len(items) == 0:
             continue
 
-        year_groups = defaultdict(list)
+        fused_scores = []
+        contradiction_count = 0
 
-        for d in data:
-            year_groups[d["year"]].append(d)
+        texts = [i["text"] for i in items]
+        ratings = [i["rating"] for i in items]
+        hashes = [i["hash"] for i in items]
 
-        year_sentiments = {}
-        yearly_contradictions = {}
+        for i in range(0, len(texts), BATCH_SIZE):
 
-        print("\n🏦", bank)
+            batch_texts = texts[i:i+BATCH_SIZE]
+            batch_ratings = ratings[i:i+BATCH_SIZE]
+            batch_hashes = hashes[i:i+BATCH_SIZE]
 
-        report_lines.append("\n" + bank)
-        report_lines.append("------------------------")
+            preds = sentiment_model.predict_batch(batch_texts)
 
-        for year in sorted(year_groups.keys()):
+            bulk_rows = []
 
-            items = year_groups[year]
+            for j, p in enumerate(preds):
 
-            start = tracker.get_progress(STEP_NAME, bank, year)
+                score = p["score"]
 
-            items = items[start:]
+                if p["label"] == "NEGATIVE":
+                    score = -score
 
-            fused_scores = []
-            contradiction_count = 0
+                final_score, contradiction = fuse_sentiment(
+                    score,
+                    batch_ratings[j]
+                )
 
-            texts = [i["text"] for i in items]
-            ratings = [i["rating"] for i in items]
+                label = sentiment_label(final_score)
 
-            total_processed = start
-
-            for i in range(0, len(texts), BATCH_SIZE):
-
-                batch_texts = texts[i:i+BATCH_SIZE]
-                batch_ratings = ratings[i:i+BATCH_SIZE]
-
-                preds = sentiment_model.predict_batch(batch_texts)
-
-                for j, p in enumerate(preds):
-
-                    score = p["score"]
-
-                    if p["label"] == "NEGATIVE":
-                        score = -score
-
-                    final_score, contradiction = fuse_sentiment(
-                        score,
-                        batch_ratings[j]
-                    )
-
-                    label = sentiment_label(final_score)
-
-                    save_review_sentiment(
+                bulk_rows.append(
+                    (
                         bank,
                         year,
                         batch_texts[j],
+                        batch_hashes[j],
                         batch_ratings[j],
                         final_score,
                         label
                     )
-
-                    fused_scores.append(final_score)
-
-                    if contradiction:
-                        contradiction_count += 1
-
-                total_processed += len(batch_texts)
-
-                tracker.save_progress(
-                    STEP_NAME,
-                    bank,
-                    year,
-                    total_processed
                 )
 
-            if not fused_scores:
-                continue
+                fused_scores.append(final_score)
 
-            yearly_score = sum(fused_scores) / len(fused_scores)
+                if contradiction:
+                    contradiction_count += 1
 
-            contradiction_ratio = contradiction_count / len(items)
+            bulk_insert_reviews(cursor, bulk_rows)
+            conn.commit()
 
-            year_sentiments[year] = yearly_score
-            yearly_contradictions[year] = contradiction_ratio
+        if not fused_scores:
+            continue
 
-            save_sentiment_score(bank, year, yearly_score, contradiction_ratio)
+        yearly_score = sum(fused_scores) / len(fused_scores)
 
-            label = sentiment_label(yearly_score)
+        contradiction_ratio = contradiction_count / len(items)
 
-            print(f"{year} → {yearly_score:.3f} ({label})")
+        year_sentiments[year] = yearly_score
+        yearly_contradictions[year] = contradiction_ratio
 
-            report_lines.append(
-                f"{year} → {yearly_score:.3f} ({label}) "
-                f"(Contradiction: {contradiction_ratio:.2%})"
-            )
+        cursor.execute(
+            """
+            INSERT OR REPLACE INTO sentiment_scores
+            (bank_name, year, sentiment, contradiction_ratio)
+            VALUES (?, ?, ?, ?)
+            """,
+            (bank, year, yearly_score, contradiction_ratio)
+        )
 
-        trend = detect_trend(year_sentiments)
+        conn.commit()
 
-        report_lines.append(f"Trend: {trend}")
+        print(f"{bank} {year} → {yearly_score:.3f}")
 
-        trend_results[bank] = {
-            "yearly_sentiment": year_sentiments,
-            "trend_direction": trend,
-            "yearly_contradiction_ratio": yearly_contradictions
-        }
+    conn.close()
 
-    with open(OUTPUT_PATH, "w") as f:
-        f.write("\n".join(report_lines))
+    trend = detect_trend(year_sentiments)
+
+    return bank, {
+        "yearly_sentiment": year_sentiments,
+        "trend_direction": trend,
+        "yearly_contradiction_ratio": yearly_contradictions
+    }
+
+
+# --------------------------------------------------
+# Main engine
+# --------------------------------------------------
+
+def main():
+
+    banks = discover_review_folders(BASE_CORP_PATH)
+
+    trend_results = {}
+
+    print("\n🚀 Running Ultra Optimized Sentiment Engine\n")
+
+    workers = max(1, multiprocessing.cpu_count() - 1)
+
+    with ProcessPoolExecutor(max_workers=workers) as executor:
+
+        results = executor.map(process_bank, banks.items())
+
+        for bank, result in results:
+
+            if result:
+                trend_results[bank] = result
 
     with open(JSON_OUTPUT_PATH, "w") as f:
         json.dump(trend_results, f, indent=4)
 
-    print("\n📄 Trend report saved:", OUTPUT_PATH)
-    print("📄 JSON data saved:", JSON_OUTPUT_PATH)
-
+    print("\n📄 JSON trend data saved:", JSON_OUTPUT_PATH)
     print("\n✅ Sentiment trend completed")
 
 

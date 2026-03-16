@@ -80,10 +80,20 @@ def init_db():
     bank_name TEXT,
     year INTEGER,
     review_text TEXT,
+    review_hash TEXT UNIQUE,
     rating REAL,
     sentiment_score REAL,
     sentiment_label TEXT,
-    review_source TEXT)
+    review_source TEXT
+    )
+    """)
+
+    # ==========================================
+    # INDEX FOR REVIEW HASH
+    # ==========================================
+    cursor.execute("""
+    CREATE INDEX IF NOT EXISTS idx_review_hash
+    ON review_sentiments(review_hash)
     """)
     # ==========================================
     # COMPLAINT TOPICS
@@ -443,15 +453,51 @@ def save_review_sentiment(bank, year, text, rating, score, label):
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
 
+    review_hash = hashlib.md5(text.encode("utf-8")).hexdigest()
+
     cursor.execute("""
-        INSERT INTO review_sentiments
-        (bank_name, year, review_text, rating, sentiment_score, sentiment_label)
-        VALUES (?, ?, ?, ?, ?, ?)
-    """, (bank, year, text, rating, score, label))
+        INSERT OR IGNORE INTO review_sentiments
+        (bank_name, year, review_text, review_hash, rating, sentiment_score, sentiment_label)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+    """, (bank, year, text, review_hash, rating, score, label))
 
     conn.commit()
     conn.close()
+# ==========================================
+# FILTER NEW REVIEWS
+# ==========================================
 
+def filter_new_reviews(cursor, items):
+
+    new_items = []
+
+    for item in items:
+
+        h = review_hash(item["text"])
+
+        cursor.execute(
+            "SELECT 1 FROM review_sentiments WHERE review_hash=? LIMIT 1",
+            (h,)
+        )
+
+        if cursor.fetchone() is None:
+            item["hash"] = h
+            new_items.append(item)
+
+    return new_items
+# ==========================================
+# BULK INSERT REVIEWS
+# ==========================================
+def bulk_insert_reviews(cursor, rows):
+
+    cursor.executemany(
+        """
+        INSERT OR IGNORE INTO review_sentiments
+        (bank_name, year, review_text, review_hash, rating, sentiment_score, sentiment_label)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        """,
+        rows
+    )
 # ==========================================
 # COMPLAINT TOPICS CACHE
 # ==========================================
