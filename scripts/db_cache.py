@@ -182,6 +182,7 @@ def init_db():
     topic TEXT,
     sentiment REAL,
     PRIMARY KEY(bank_name, year, topic)
+    )
     """)
     # ==========================================
     # SENTIMENT PREDICTION
