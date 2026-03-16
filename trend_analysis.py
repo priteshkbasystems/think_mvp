@@ -31,7 +31,7 @@ def normalize_rating(star_rating):
 
 
 # -----------------------------------------
-# Fuse text sentiment + star rating
+# Fuse sentiment
 # -----------------------------------------
 
 def fuse_sentiment(text_score, rating):
@@ -78,7 +78,7 @@ def discover_review_folders(base_path):
 
 
 # -----------------------------------------
-# Load reviews safely
+# Load reviews (ALL Excel Sheets)
 # -----------------------------------------
 
 def load_reviews(folder):
@@ -93,44 +93,57 @@ def load_reviews(folder):
         path = os.path.join(folder, file)
 
         try:
-            df = pd.read_excel(path)
-        except:
+            xls = pd.ExcelFile(path)
+        except Exception as e:
+            print("⚠ Cannot open file:", file, e)
             continue
 
-        if "Date" not in df.columns or "review" not in df.columns:
-            continue
+        print(f"\n📄 Loading file: {file}")
 
-        # Safe date parsing
-        df["Date"] = pd.to_datetime(
-            df["Date"],
-            errors="coerce",
-            dayfirst=True
-        )
+        for sheet in xls.sheet_names:
 
-        df = df.dropna(subset=["Date"])
+            try:
+                df = pd.read_excel(xls, sheet_name=sheet)
+            except:
+                continue
 
-        df["review"] = df["review"].astype(str)
+            print(f"   → Sheet: {sheet}")
 
-        if "Rating" in df.columns:
-            df["Rating"] = pd.to_numeric(df["Rating"], errors="coerce")
-        else:
-            df["Rating"] = None
+            if "Date" not in df.columns or "review" not in df.columns:
+                print("   ⚠ Required columns missing. Skipping.")
+                continue
 
-        for _, row in df.iterrows():
+            df["Date"] = pd.to_datetime(
+                df["Date"],
+                errors="coerce",
+                dayfirst=True
+            )
 
-            year = int(row["Date"].year)
+            df = df.dropna(subset=["Date"])
 
-            data.append({
-                "year": year,
-                "text": row["review"],
-                "rating": row["Rating"]
-            })
+            df["review"] = df["review"].astype(str)
+            df = df[df["review"].str.strip() != ""]
+
+            if "Rating" in df.columns:
+                df["Rating"] = pd.to_numeric(df["Rating"], errors="coerce")
+            else:
+                df["Rating"] = None
+
+            for _, row in df.iterrows():
+
+                year = int(row["Date"].year)
+
+                data.append({
+                    "year": year,
+                    "text": row["review"],
+                    "rating": row["Rating"]
+                })
 
     return data
 
 
 # -----------------------------------------
-# Detect trend direction
+# Detect trend
 # -----------------------------------------
 
 def detect_trend(sentiments):
@@ -279,7 +292,6 @@ def main():
             "yearly_contradiction_ratio": yearly_contradictions
         }
 
-    # Save reports
     with open(OUTPUT_PATH, "w") as f:
         f.write("\n".join(report_lines))
 
@@ -291,10 +303,6 @@ def main():
 
     print("\n✅ Sentiment trend completed")
 
-
-# -----------------------------------------
-# Run
-# -----------------------------------------
 
 if __name__ == "__main__":
     main()
