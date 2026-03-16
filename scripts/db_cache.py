@@ -239,6 +239,23 @@ def init_db():
     highlight TEXT
     )
     """)
+
+    # ==========================================
+    # FINANCIAL METRICS
+    # ==========================================
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS financial_metrics (
+    bank_name TEXT,
+    year INTEGER,
+    revenue REAL,
+    net_profit REAL,
+    operating_income REAL,
+    total_assets REAL,
+    roe REAL,
+    PRIMARY KEY(bank_name, year)
+    )
+    """)
+    # ==========================================
     conn.commit()
     conn.close()
 
