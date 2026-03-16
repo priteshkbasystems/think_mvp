@@ -48,7 +48,16 @@ def init_db():
             PRIMARY KEY (bank_name, year)
         )
     """)
-
+    # ------------------------------
+    # Human labels
+    # ------------------------------
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS human_labels(
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    review_text TEXT,
+    ai_label TEXT,
+    human_label TEXT)
+    """)
     # ------------------------------
     # Stock yearly returns
     # ------------------------------
@@ -66,16 +75,19 @@ def init_db():
     # Review sentiments
     # ------------------------------
     cursor.execute("""
-        CREATE TABLE IF NOT EXISTS review_sentiments (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            bank_name TEXT,
-            year INTEGER,
-            review_text TEXT,
-            rating REAL,
-            sentiment_score REAL,
-            sentiment_label TEXT
-        )
+    CREATE TABLE IF NOT EXISTS review_sentiments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    bank_name TEXT,
+    year INTEGER,
+    review_text TEXT,
+    rating REAL,
+    sentiment_score REAL,
+    sentiment_label TEXT,
+    review_source TEXT)
     """)
+    # ==========================================
+    # COMPLAINT TOPICS
+    # ==========================================
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS complaint_topics (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -86,6 +98,9 @@ def init_db():
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
     """)
+    # ==========================================
+    # EMBEDDING CACHE
+    # ==========================================
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS embedding_cache (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -94,7 +109,37 @@ def init_db():
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
     """)
-
+    # ==========================================
+    # TRANSFORMATION COMPETENCIES
+    # ==========================================
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS transformation_competencies(
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    bank_name TEXT,
+    year INTEGER,
+    competency TEXT,
+    score REAL)
+    """)
+    # ==========================================
+    # CONVERSATION SENTIMENT FLOW
+    # ==========================================
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS conversation_sentiment_flow(
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    conversation_id TEXT,
+    step INTEGER,
+    message TEXT,
+    sentiment REAL)
+    """)
+    # ==========================================
+    # CORPORATE SENTIMENT
+    # ==========================================
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS corporate_sentiment(
+    bank_name TEXT,
+    year INTEGER,
+    sentiment REAL)
+    """)
     # ==========================================
     # DASHBOARD NARRATIVE SCORE
     # ==========================================
@@ -130,6 +175,14 @@ def init_db():
     )
     """)
 
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS corporate_topic_sentiment (
+    bank_name TEXT,
+    year INTEGER,
+    topic TEXT,
+    sentiment REAL,
+    PRIMARY KEY(bank_name, year, topic)
+    """)
     # ==========================================
     # SENTIMENT PREDICTION
     # ==========================================
@@ -142,7 +195,37 @@ def init_db():
     PRIMARY KEY(bank_name, year)
     )
     """)
-
+    # ==========================================
+    # SOURCE CONCORDANCE
+    # ==========================================
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS source_concordance (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    bank_name TEXT,
+    review_source TEXT,
+    avg_sentiment REAL)
+    """)
+    # ==========================================
+    # SENTIMENT TAXONOMY
+    # ==========================================
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS sentiment_taxonomy (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    bank_name TEXT,
+    year INTEGER,
+    review_text TEXT,
+    emotion TEXT,
+    category TEXT)
+    """)
+    # ==========================================
+    # PIPELINE RUNS
+    # ==========================================
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS pipeline_runs (
+    step_name TEXT PRIMARY KEY,
+    last_run TIMESTAMP,
+    status TEXT)
+    """)
     # ==========================================
     # NARRATIVE HIGHLIGHTS
     # ==========================================
@@ -403,6 +486,43 @@ def save_embedding(text, embedding):
         """,
         (text_hash, embedding.astype(np.float32).tobytes())
     )
+
+    conn.commit()
+    conn.close()
+
+# ==========================================
+# CORPORATE TOPIC SENTIMENT
+# ==========================================
+
+def save_corporate_topic_sentiment(bank_name, year, topic_scores):
+
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+
+    for topic, score in topic_scores.items():
+
+        cursor.execute("""
+        INSERT OR REPLACE INTO corporate_topic_sentiment
+        (bank_name, year, topic, sentiment)
+        VALUES (?, ?, ?, ?)
+        """, (bank_name, year, topic, score))
+
+    conn.commit()
+    conn.close()
+
+# ==========================================
+# SAVE SENTIMENT TAXONOMY
+# ==========================================
+def save_sentiment_taxonomy(bank_name, year, text, emotion, category):
+
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+
+    cursor.execute("""
+    INSERT INTO sentiment_taxonomy
+    (bank_name, year, review_text, emotion, category)
+    VALUES (?, ?, ?, ?, ?)
+    """, (bank_name, year, text, emotion, category))
 
     conn.commit()
     conn.close()
