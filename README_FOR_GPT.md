@@ -1,3 +1,113 @@
+## New components and features (extensions)
+
+This section documents additional modules and tables added after the original README so that GPT has an up‑to‑date view of the platform.
+
+### New scripts and pipeline steps
+
+- `scripts/financial_extraction.py` / `scripts/financial_extraction_pipeline.py` – extract revenue, net profit, operating income, total assets, ROE from PDFs already indexed in `pdf_cache`, and store per‑bank/year rows in `financial_metrics`. Integrated as STEP 3.5 in `pipeline_runner.py`.
+- `scripts/corporate_sentiment_model.py` – runs document‑level corporate sentiment using `SentimentModel` over sentences from each PDF in `pdf_cache`, writing `(bank_name, year, sentiment)` into `corporate_sentiment`.
+- `scripts/corporate_topic_pipeline.py` – computes topic‑level corporate narrative scores from corporate PDFs and writes them via `save_corporate_topic_sentiment` into `corporate_topic_sentiment`. Used as STEP 4 – CORPORATE TOPIC SENTIMENT.
+- `scripts/topic_alignment.py` – aligns corporate topics (`corporate_topic_sentiment`) with customer complaint topics (`complaint_topics`) using SentenceTransformer embeddings; invoked in STEP 6 – TOPIC ALIGNMENT.
+- `scripts/aspect_sentiment.py` – computes aspect‑level sentiment (mobile app, customer service, login, payments, security, pricing, UX) by combining text sentiment and rating; used in STEP 7 – ASPECT SENTIMENT.
+- `scripts/sentiment_taxonomy_pipeline.py` – applies `CustomSentimentTaxonomy` to label each review with emotion + business category and persists into `sentiment_taxonomy`; used in STEP 7.5 – CUSTOM SENTIMENT TAXONOMY.
+- `scripts/scenario_simulator.py` – provides a simple simulator that learns a mapping from narrative scores to sentiment scores and exposes a `predict(new_narrative_score)` function; used in STEP 11 – SCENARIO SIMULATION.
+- `scripts/parallel_executor.py` – thin wrapper over `ThreadPoolExecutor` to parallelise per‑document operations (e.g. corporate sentiment analysis).
+- `scripts/pipeline_manager.py` – manages a `pipeline_runs` table so each pipeline step knows whether it needs to rerun or can be skipped as cached.
+- `scripts/pipeline_dependency_manager.py` – encodes dependencies between steps and exposes `dependency_changed(step)` so downstream steps rerun when upstream ones have not succeeded.
+
+### New / extended database tables
+
+- `financial_metrics` – per‑bank, per‑year financial KPIs (revenue, net_profit, operating_income, total_assets, roe) extracted from corporate PDFs.
+- `corporate_sentiment` – per‑bank, per‑year sentiment score for corporate documents.
+- `corporate_topic_sentiment` – per‑bank, per‑year, per‑topic corporate narrative strength (topic names and scores).
+- `sentiment_taxonomy` – per‑review emotion and business category labels aligned to the Think sentiment taxonomy.
+- `pipeline_runs` – records `step_name`, `status`, and `last_run` to support restartable, dependency‑aware pipeline execution.
+
+
+### End‑to‑end pipeline steps (`pipeline_runner.py`)
+
+All main processing is orchestrated by `pipeline_runner.py` using the following ordered steps:
+
+1. **STEP 1 — DATA INDEXING** (`scripts.data_indexer.main`)  
+   Discover banks and stock price files, compute yearly stock returns, and populate `banks` and `stock_returns` in SQLite.
+2. **STEP 2 — SENTIMENT TREND ANALYSIS** (`trend_analysis.main`)  
+   Load yearly customer reviews per bank, run `TextProcessor`, compute yearly sentiment and trend, and write trend report / JSON.
+3. **STEP 3 — TRANSFORMATION INTELLIGENCE** (`scripts.transformation_correlation.main`)  
+   Extract and OCR corporate PDFs, score digital transformation themes, cache in `pdf_cache`, and correlate transformation vs sentiment.
+4. **STEP 3.5 — FINANCIAL METRICS EXTRACTION** (`scripts.financial_extraction_pipeline.main`)  
+   Re‑read PDFs in `pdf_cache`, regex‑extract revenue, profit, assets, ROE, and write to `financial_metrics`.
+5. **STEP 4 — CORPORATE TOPIC SENTIMENT** (`scripts.corporate_topic_pipeline.main`)  
+   For each corporate PDF, compute topic‑level corporate narrative scores and store in `corporate_topic_sentiment`.
+6. **STEP 5 — NARRATIVE SCORES** (`scripts.narrative_score_generator.generate_narrative_scores`)  
+   Convert document‑level transformation scores from `pdf_cache` into per‑bank/year `narrative_scores`.
+7. **STEP 6 — TOPIC ALIGNMENT** (`scripts.topic_alignment.TopicAlignmentEngine`)  
+   Align topics from `corporate_topic_sentiment` with complaint topics from `complaint_topics` using SentenceTransformer embeddings.
+8. **STEP 7 — ASPECT SENTIMENT** (`scripts.aspect_sentiment.AspectSentimentAnalyzer`)  
+   Classify reviews into fixed aspects (mobile app, customer service, etc.), fuse text sentiment + rating, and compute mean sentiment per aspect.
+9. **STEP 7.5 — CUSTOM SENTIMENT TAXONOMY** (`scripts.sentiment_taxonomy_pipeline.main`)  
+   Apply `CustomSentimentTaxonomy` to reviews to generate emotion + business category labels stored in `sentiment_taxonomy`.
+10. **STEP 8 — DASHBOARD DATA ENGINE** (`scripts.dashboard_data_engine.main`)  
+    Build dashboard‑oriented tables: `complaint_topics` (keyword topics), `narrative_sentiment_correlation`, `narrative_lag`, `sentiment_predictions`, `narrative_highlights`.
+11. **STEP 9 — MARKET INTELLIGENCE** (`scripts.strategic_market_intelligence.main`)  
+    Combine yearly sentiment with stock returns and generate a strategic market intelligence report.
+12. **STEP 10 — AI EXECUTIVE INSIGHTS** (`scripts.ai_insight_generator.main`)  
+    Generate an executive‑level AI insight report based on sentiment + market performance.
+13. **STEP 11 — SCENARIO SIMULATION** (`scripts.scenario_simulator.ScenarioSimulator`)  
+    For each bank, fit a simple model from narrative scores to sentiment, then simulate “what‑if” future sentiment under improved narrative scores.
+14. **STEP 12 — TRANSFORMATION IMPACT SCORE** (`scripts.transformation_impact_score.TransformationImpactScore`)  
+    Compute a per‑bank “transformation impact score” summarising how effectively transformation activity converts into sentiment/financial outcomes.
+15. **STEP 13 — SOURCE SENTIMENT CONCORDANCE** (`scripts.source_concordance_pipeline.main`)  
+    Measure agreement / divergence in sentiment across multiple customer feedback sources and store concordance metrics.
+16. **STEP 14 — TRANSFORMATION LEXICON** (`scripts.transformation_lexicon.TransformationLexicon`)  
+    Load and manage a Cenkusha/Think‑specific transformation lexicon (terms, phrases) used across other modules.
+17. **STEP 15 — TOPIC SENTIMENT CORRELATION** (`scripts.topic_sentiment_correlation_pipeline.main`)  
+    Correlate topic‑level sentiment (customer + corporate topics) with transformation and possibly financial metrics.
+18. **STEP 16 — CUSTOMER JOURNEY SENTIMENT** (`scripts.journey_sentiment_pipeline.main`)  
+    Map reviews onto customer journey stages (e.g. onboarding, servicing) and compute sentiment per stage.
+19. **STEP 17 — HUMAN FEEDBACK LOOP** (`scripts.feedback_learning.FeedbackLearning`)  
+    Check for new human‑labelled samples and prepare them for use in improving models (active learning loop).
+20. **STEP 18 — MODEL RETRAINING** (`scripts.model_retraining.ModelRetraining`)  
+    Use accumulated labelled data and feedback to retrain or fine‑tune sentiment/topic models.
+21. **STEP 19 — TRANSFORMATION COMPETENCIES** (`scripts.transformation_competency_engine.TransformationCompetencyEngine`)  
+    Derive higher‑level transformation competency scores per bank from narrative/sentiment/financial features.
+22. **STEP 20 — TRANSFORMATION PERFORMANCE INDEX** (`scripts.transformation_performance_index.TransformationPerformanceIndex`)  
+    Compute a composite transformation performance index per bank and print scores.
+23. **STEP 21 — COMPETITOR BENCHMARK** (`scripts.competitor_benchmark_pipeline.main`)  
+    Benchmark banks against each other on key KPIs (sentiment, transformation, financials).
+24. **STEP 22 — CONVERSATION SENTIMENT FLOW** (`scripts.conversation_sentiment_pipeline.main`)  
+    Analyse sentiment flow over time within conversations (e.g. escalation, resolution patterns).
+25. **STEP 23 — CORPORATE SENTIMENT MODEL** (`scripts.corporate_sentiment_pipeline.main`)  
+    Run a full corporate‑level sentiment pipeline (using `CorporateSentimentModel` and related utilities) and persist results.
+26. **STEP 24 — SUCCESS FACTOR DETECTION** (`scripts.success_factor_pipeline.main`)  
+    Mine data to detect key success factors (features) associated with better transformation outcomes.
+27. **STEP 25 — TRANSFORMATION NARRATIVE EVOLUTION** (`scripts.narrative_evolution_pipeline.main`)  
+    Track how each bank’s transformation narrative changes over years and relate that to sentiment/financial changes.
+28. **STEP 26 — TRANSFORMATION LAG ANALYSIS** (`scripts.transformation_lag_pipeline.main`)  
+    Analyse time lag between transformation narrative changes and observed shifts in customer sentiment or performance.
+
+
+### Supporting analysis modules (used by the pipeline)
+
+These scripts are helpers called by the pipeline steps above. They do not define new entrypoints but are important for understanding the full flow:
+
+- `scripts/source_concordance.py` / `scripts/source_concordance_pipeline.py` – utilities and pipeline to compute concordance of sentiment across multiple customer‑review sources.
+- `scripts/topic_sentiment_correlation.py` / `scripts/topic_sentiment_correlation_pipeline.py` – helpers and pipeline to correlate topic‑level sentiment (customer + corporate topics) with transformation and financial metrics.
+- `scripts/transformation_lexicon.py` – defines and manages the custom transformation lexicon used across transformation‑related analyses.
+- `scripts/transformation_impact_score.py` – implements the logic for computing Transformation Impact Score used in STEP 12.
+- `scripts/transformation_performance_index.py` – implements the composite Transformation Performance Index used in STEP 20.
+- `scripts/transformation_lag_analysis.py` – lower‑level analysis helpers for lag measurement used by `transformation_lag_pipeline`.
+- `scripts/competitor_benchmark.py` / `scripts/competitor_benchmark_pipeline.py` – utilities and pipeline to benchmark banks against peers on sentiment, transformation and financial KPIs.
+- `scripts/conversation_sentiment_flow.py` / `scripts/conversation_sentiment_pipeline.py` – utilities and pipeline for analysing sentiment flow inside conversations (episode‑level sentiment dynamics).
+- `scripts/journey_sentiment.py` / `scripts/journey_sentiment_pipeline.py` – utilities and pipeline for mapping reviews onto customer journey stages and aggregating sentiment per stage.
+- `scripts/corporate_topic_sentiment.py` – defines the `CorporateTopicSentiment` engine used by `corporate_topic_pipeline`.
+- `scripts/custom_sentiment_taxonomy.py` – defines `CustomSentimentTaxonomy`, the custom emotion/business taxonomy used in STEP 7.5.
+- `scripts/feedback_learning.py` – implements `FeedbackLearning`, which loads and tracks new human labels for the feedback loop (STEP 17).
+- `scripts/model_retraining.py` – implements `ModelRetraining`, which consumes feedback data to retrain models (STEP 18).
+- `scripts/transformation_competency_engine.py` – implements `TransformationCompetencyEngine` logic for STEP 19.
+- `scripts/success_factor_detection.py` / `scripts/success_factor_pipeline.py` – helpers and pipeline for detecting key success factors behind successful transformation outcomes (STEP 24).
+- `scripts/narrative_evolution_analysis.py` / `scripts/narrative_evolution_pipeline.py` – utilities and pipeline to compute how corporate transformation narratives evolve over time (STEP 25).
+- `scripts/corporate_sentiment_analyzer.py` / `scripts/corporate_sentiment_pipeline.py` – helpers and pipeline for running the corporate‑level sentiment model (STEP 23).
+
 ## Overview
 
 This repository implements an **AI Banking Intelligence Platform** that:

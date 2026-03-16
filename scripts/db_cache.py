@@ -256,6 +256,18 @@ def init_db():
     )
     """)
     # ==========================================
+    # STEP PROGRESS
+    # ==========================================
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS step_progress (
+    step_name TEXT,
+    bank_name TEXT,
+    year INTEGER,
+    last_processed_index INTEGER,
+    PRIMARY KEY(step_name, bank_name, year)
+    )
+    """)
+    # ==========================================
     conn.commit()
     conn.close()
 
