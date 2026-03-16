@@ -22,9 +22,17 @@ BATCH_SIZE = 128
 STEP_NAME = "STEP 2 — SENTIMENT TREND"
 
 
+# -----------------------------------------
+# Normalize rating
+# -----------------------------------------
+
 def normalize_rating(star_rating):
     return (star_rating - 3) / 2
 
+
+# -----------------------------------------
+# Fuse text sentiment + star rating
+# -----------------------------------------
 
 def fuse_sentiment(text_score, rating):
 
@@ -40,9 +48,16 @@ def fuse_sentiment(text_score, rating):
     return final, contradiction
 
 
+# -----------------------------------------
+# Discover review folders
+# -----------------------------------------
+
 def discover_review_folders(base_path):
 
     banks = {}
+
+    if not os.path.exists(base_path):
+        return banks
 
     for bank_folder in os.listdir(base_path):
 
@@ -62,6 +77,10 @@ def discover_review_folders(base_path):
     return banks
 
 
+# -----------------------------------------
+# Load reviews safely
+# -----------------------------------------
+
 def load_reviews(folder):
 
     data = []
@@ -71,23 +90,48 @@ def load_reviews(folder):
         if not file.endswith(".xlsx"):
             continue
 
-        df = pd.read_excel(os.path.join(folder, file))
+        path = os.path.join(folder, file)
+
+        try:
+            df = pd.read_excel(path)
+        except:
+            continue
 
         if "Date" not in df.columns or "review" not in df.columns:
             continue
 
-        df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
+        # Safe date parsing
+        df["Date"] = pd.to_datetime(
+            df["Date"],
+            errors="coerce",
+            dayfirst=True
+        )
+
+        df = df.dropna(subset=["Date"])
+
+        df["review"] = df["review"].astype(str)
+
+        if "Rating" in df.columns:
+            df["Rating"] = pd.to_numeric(df["Rating"], errors="coerce")
+        else:
+            df["Rating"] = None
 
         for _, row in df.iterrows():
 
+            year = int(row["Date"].year)
+
             data.append({
-                "year": int(row["Date"].year),
-                "text": str(row["review"]),
-                "rating": row.get("Rating")
+                "year": year,
+                "text": row["review"],
+                "rating": row["Rating"]
             })
 
     return data
 
+
+# -----------------------------------------
+# Detect trend direction
+# -----------------------------------------
 
 def detect_trend(sentiments):
 
@@ -107,6 +151,10 @@ def detect_trend(sentiments):
     return "Stable"
 
 
+# -----------------------------------------
+# Main Engine
+# -----------------------------------------
+
 def main():
 
     sentiment_model = SentimentModel()
@@ -115,12 +163,17 @@ def main():
     banks = discover_review_folders(BASE_CORP_PATH)
 
     trend_results = {}
+    report_lines = []
 
     print("\n🚀 Running Optimized Sentiment Engine\n")
 
     for bank, path in banks.items():
 
         data = load_reviews(path)
+
+        if len(data) == 0:
+            print("⚠ No reviews:", bank)
+            continue
 
         year_groups = defaultdict(list)
 
@@ -131,6 +184,9 @@ def main():
         yearly_contradictions = {}
 
         print("\n🏦", bank)
+
+        report_lines.append("\n" + bank)
+        report_lines.append("------------------------")
 
         for year in sorted(year_groups.keys()):
 
@@ -145,6 +201,8 @@ def main():
 
             texts = [i["text"] for i in items]
             ratings = [i["rating"] for i in items]
+
+            total_processed = start
 
             for i in range(0, len(texts), BATCH_SIZE):
 
@@ -181,11 +239,13 @@ def main():
                     if contradiction:
                         contradiction_count += 1
 
+                total_processed += len(batch_texts)
+
                 tracker.save_progress(
                     STEP_NAME,
                     bank,
                     year,
-                    start + i
+                    total_processed
                 )
 
             if not fused_scores:
@@ -200,9 +260,18 @@ def main():
 
             save_sentiment_score(bank, year, yearly_score, contradiction_ratio)
 
-            print(f"{year} → {yearly_score:.3f}")
+            label = sentiment_label(yearly_score)
+
+            print(f"{year} → {yearly_score:.3f} ({label})")
+
+            report_lines.append(
+                f"{year} → {yearly_score:.3f} ({label}) "
+                f"(Contradiction: {contradiction_ratio:.2%})"
+            )
 
         trend = detect_trend(year_sentiments)
+
+        report_lines.append(f"Trend: {trend}")
 
         trend_results[bank] = {
             "yearly_sentiment": year_sentiments,
@@ -210,11 +279,22 @@ def main():
             "yearly_contradiction_ratio": yearly_contradictions
         }
 
+    # Save reports
+    with open(OUTPUT_PATH, "w") as f:
+        f.write("\n".join(report_lines))
+
     with open(JSON_OUTPUT_PATH, "w") as f:
         json.dump(trend_results, f, indent=4)
 
+    print("\n📄 Trend report saved:", OUTPUT_PATH)
+    print("📄 JSON data saved:", JSON_OUTPUT_PATH)
+
     print("\n✅ Sentiment trend completed")
 
+
+# -----------------------------------------
+# Run
+# -----------------------------------------
 
 if __name__ == "__main__":
     main()

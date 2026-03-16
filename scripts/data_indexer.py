@@ -35,23 +35,46 @@ def compute_yearly_returns(file_path):
 
     try:
 
+        # Load file
         if file_path.endswith(".xlsx"):
             df = pd.read_excel(file_path)
         else:
             df = pd.read_csv(file_path)
 
+        # Required columns check
         if "Date" not in df.columns or "Price" not in df.columns:
+            print("⚠ Missing Date or Price column:", file_path)
             return {}
 
-        df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
+        # Parse date safely
+        df["Date"] = pd.to_datetime(
+            df["Date"],
+            errors="coerce",
+            dayfirst=True
+        )
 
+        # Convert price safely
+        df["Price"] = pd.to_numeric(df["Price"], errors="coerce")
+
+        # Remove invalid rows
         df = df.dropna(subset=["Date", "Price"])
 
+        if len(df) == 0:
+            return {}
+
+        # Extract year
         df["year"] = df["Date"].dt.year
+
+        # Sort by date
+        df = df.sort_values("Date")
 
         results = {}
 
+        # Compute yearly returns
         for year, g in df.groupby("year"):
+
+            if len(g) < 2:
+                continue
 
             start = g.iloc[0]["Price"]
             end = g.iloc[-1]["Price"]
@@ -67,7 +90,7 @@ def compute_yearly_returns(file_path):
 
     except Exception as e:
 
-        print("Stock return error:", file_path, e)
+        print("❌ Stock return error:", file_path, e)
 
         return {}
 
@@ -81,6 +104,7 @@ def discover_banks(base_path):
     banks = {}
 
     if not os.path.exists(base_path):
+        print("⚠ Base path not found:", base_path)
         return banks
 
     for name in os.listdir(base_path):
@@ -133,16 +157,22 @@ def main():
 
     print("🔎 Running Data Indexer...")
 
+    # Ensure DB tables exist
     init_db()
 
     banks = discover_banks(BASE_CORP_PATH)
 
+    if not banks:
+        print("⚠ No banks discovered.")
+        return
+
     for bank_name, info in banks.items():
+
+        print(f"📊 Indexing {bank_name}")
 
         register_bank(bank_name)
 
         if info["stock"]:
-
             index_stock_data(bank_name, info["stock"])
 
     print("✔ Data indexing completed")
