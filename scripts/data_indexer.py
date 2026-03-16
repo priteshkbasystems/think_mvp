@@ -5,7 +5,7 @@ import pandas as pd
 from scripts.db_cache import init_db, register_bank
 
 DB_PATH = "/content/drive/MyDrive/THINK_MVP/04_Analysis_Output/transformation_cache.db"
-BASE_CORP_PATH = "/content/drive/MyDrive/THINK_MVP/01_Input_Data"
+BASE_CORP_PATH = "/content/drive/MyDrive/THINK_MVP/01_Corporate_Documents"
 
 
 # ---------------------------------------
