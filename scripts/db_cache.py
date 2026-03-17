@@ -172,6 +172,29 @@ def init_db():
         )
     """)
 
+    # ------------------------------
+    # STOCK RETURNS (RESTORED)
+    # ------------------------------
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS stock_returns (
+        bank_name TEXT,
+        year INTEGER,
+        return REAL,
+        PRIMARY KEY (bank_name, year)
+    )
+    """)
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS financial_metrics (
+    bank_name TEXT,
+    year INTEGER,
+    revenue REAL,
+    net_profit REAL,
+    operating_income REAL,
+    total_assets REAL,
+    roe REAL,
+    PRIMARY KEY(bank_name, year)
+    )
+    """)
     conn.commit()
     conn.close()
 
