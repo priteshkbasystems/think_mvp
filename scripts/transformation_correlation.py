@@ -37,6 +37,50 @@ FINAL_OUTPUT_PATH = "/content/drive/MyDrive/THINK_MVP/04_Analysis_Output/transfo
 MAX_SENTENCES = 300
 
 # ==========================================
+# DISCOVER BANKS (FIXED)
+# ==========================================
+
+def discover_banks(base_path):
+
+    banks = {}
+
+    if not os.path.exists(base_path):
+        print("❌ Base path not found:", base_path)
+        return banks
+
+    for bank_folder in os.listdir(base_path):
+
+        bank_path = os.path.join(base_path, bank_folder)
+
+        if not os.path.isdir(bank_path):
+            continue
+
+        components = {
+            "annual_reports": None,
+            "investor_presentations": None
+        }
+
+        for sub in os.listdir(bank_path):
+
+            sub_path = os.path.join(bank_path, sub)
+
+            if not os.path.isdir(sub_path):
+                continue
+
+            sub_lower = sub.lower()
+
+            if sub_lower == "annual_reports":
+                components["annual_reports"] = sub_path
+
+            elif sub_lower in ["investor_presentations", "investors_presentations"]:
+                components["investor_presentations"] = sub_path
+
+        banks[bank_folder] = components
+
+    return banks
+
+
+# ==========================================
 # TRANSFORMATION THEMES
 # ==========================================
 
@@ -93,13 +137,13 @@ def extract_text_with_ocr(pdf_path):
 
     return text.lower()
 
+
 # ==========================================
-# PDF TEXT EXTRACTION (WITH CACHE)
+# PDF TEXT EXTRACTION (CACHED)
 # ==========================================
 
 def extract_text_from_pdf(pdf_path):
 
-    # 🔥 STEP 1 — CHECK CACHE
     cached_text = get_cached_pdf_text(pdf_path)
 
     if cached_text:
@@ -118,17 +162,17 @@ def extract_text_from_pdf(pdf_path):
         text = text.lower()
 
         if len(text.strip()) < 100:
-            print("⚠ Running OCR:", os.path.basename(pdf_path))
+            print("⚠ OCR fallback:", os.path.basename(pdf_path))
             text = extract_text_with_ocr(pdf_path)
 
-        # 🔥 SAVE CACHE
         save_pdf_text(pdf_path, text)
 
         return text
 
     except:
-        print("❌ PDF read failed:", pdf_path)
+        print("❌ Failed to read PDF:", pdf_path)
         return ""
+
 
 # ==========================================
 # FILE CACHE CHECK
@@ -137,18 +181,16 @@ def extract_text_from_pdf(pdf_path):
 def should_process_pdf(file_path):
 
     last_modified = get_file_modified_time(file_path)
-
     cached = get_cached_score(file_path)
 
     if cached is None:
         return True, last_modified
 
-    cached_time, _, _ = cached
-
-    if cached_time != last_modified:
+    if cached[0] != last_modified:
         return True, last_modified
 
     return False, last_modified
+
 
 # ==========================================
 # SCORE
@@ -178,15 +220,15 @@ def compute_transformation_score(text):
     embeddings = np.array(embeddings)
 
     sim = cosine_similarity(embeddings, THEME_EMBEDDINGS)
-
     scores = sim.max(axis=1)
 
     strong = [x for x in scores if x > 0.45]
 
-    return len(strong) / len(scores) if scores.size else 0
+    return len(strong) / len(scores)
+
 
 # ==========================================
-# FOLDER SCAN (OPTIMIZED)
+# PROCESS FOLDER
 # ==========================================
 
 def compute_scores_from_folder(folder_path):
@@ -213,11 +255,9 @@ def compute_scores_from_folder(folder_path):
 
             if not should_run:
                 print("✔ Skipping unchanged:", file)
-
                 cached = get_cached_score(path)
                 if cached:
                     scores[cached[1]] = cached[2]
-
                 continue
 
             text = extract_text_from_pdf(path)
@@ -233,6 +273,7 @@ def compute_scores_from_folder(folder_path):
 
     return scores
 
+
 # ==========================================
 # UTILS
 # ==========================================
@@ -247,13 +288,14 @@ def normalize_scores(scores):
     if not scores:
         return scores
 
-    m = max(scores.values())
+    max_val = max(scores.values())
 
-    if m > 0:
-        for k in scores:
-            scores[k] /= m
+    if max_val > 0:
+        for y in scores:
+            scores[y] /= max_val
 
     return scores
+
 
 # ==========================================
 # LOAD SENTIMENT
@@ -264,6 +306,7 @@ def load_sentiment_trend():
     path = os.path.join(TREND_OUTPUT_PATH, "bank_trend_data.json")
 
     if not os.path.exists(path):
+        print("⚠ Running trend engine...")
         run_trend_engine()
 
     if not os.path.exists(path):
@@ -276,6 +319,7 @@ def load_sentiment_trend():
         bank: {int(y): v for y, v in data["yearly_sentiment"].items()}
         for bank, data in raw.items()
     }
+
 
 # ==========================================
 # CORRELATION
@@ -299,6 +343,7 @@ def compute_correlation(t, s):
         return None
 
     return pearsonr(x, y)[0]
+
 
 # ==========================================
 # MAIN
@@ -334,14 +379,14 @@ def main():
 
         if corr is None:
             report.append("Insufficient data")
-            continue
-
-        report.append(f"Correlation: {corr:.3f}")
+        else:
+            report.append(f"Correlation: {corr:.3f}")
 
     with open(FINAL_OUTPUT_PATH, "w") as f:
         f.write("\n".join(report))
 
-    print("\n📄 Report saved")
+    print("\n📄 Report saved:", FINAL_OUTPUT_PATH)
+
 
 # ==========================================
 if __name__ == "__main__":
