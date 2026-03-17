@@ -250,7 +250,18 @@ def init_db():
         PRIMARY KEY(step_name, bank_name, year)
     )
     """)
-
+    # ==========================================
+    # HUMAN FEEDBACK LOOP
+    # ==========================================
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS human_labels(
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    review_text TEXT,
+    ai_label TEXT,
+    human_label TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+    """)
     conn.commit()
     conn.close()
 
