@@ -397,3 +397,41 @@ def save_pdf_text(path, text):
     cursor.execute("INSERT OR REPLACE INTO pdf_text_cache VALUES (?, ?)", (path, text))
     conn.commit()
     conn.close()
+
+# ==========================================
+# FILE MODIFIED TIME (FIX)
+# ==========================================
+def get_file_modified_time(path):
+    return os.path.getmtime(path)
+
+
+# ==========================================
+# CORPORATE TOPIC CACHE (FIX)
+# ==========================================
+def get_topic_cache(file_path):
+
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute("""
+    SELECT last_modified FROM corporate_topic_cache WHERE file_path=?
+    """, (file_path,))
+
+    row = cursor.fetchone()
+    conn.close()
+
+    return row[0] if row else None
+
+
+def update_topic_cache(file_path, last_modified):
+
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute("""
+    INSERT OR REPLACE INTO corporate_topic_cache
+    VALUES (?, ?)
+    """, (file_path, last_modified))
+
+    conn.commit()
+    conn.close()
