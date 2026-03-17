@@ -377,3 +377,36 @@ def save_corporate_topic_sentiment(bank_name, year, topic_scores):
 
     conn.commit()
     conn.close()
+
+# ==========================================
+# BANK MANAGEMENT (RESTORED)
+# ==========================================
+def register_bank(bank_name):
+
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute("""
+        INSERT OR IGNORE INTO banks (bank_name)
+        VALUES (?)
+    """, (bank_name,))
+
+    conn.commit()
+    conn.close()
+
+
+# ==========================================
+# GET REGISTERED BANKS
+# ==========================================
+def get_registered_banks():
+
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute("SELECT bank_name FROM banks")
+
+    banks = [row[0] for row in cursor.fetchall()]
+
+    conn.close()
+
+    return banks
