@@ -14,72 +14,88 @@ class SuccessFactorDetection:
         conn = sqlite3.connect(DB_PATH)
 
         # -----------------------------------------
-        # CUSTOMER TOPIC SENTIMENT (VALID ONLY)
+        # CUSTOMER TOPICS (FROM complaint_topics)
         # -----------------------------------------
         topics = pd.read_sql("""
         SELECT 
             bank_name,
             topic_id,
-            AVG(sentiment_score) AS sentiment,
-            COUNT(*) as volume
-        FROM review_sentiments
-        WHERE topic_id IS NOT NULL
-        GROUP BY bank_name, topic_id
+            keywords,
+            review_count
+        FROM complaint_topics
         """, conn)
 
         # -----------------------------------------
-        # LOAD TOPIC NAMES
+        # CUSTOMER SENTIMENT (OVERALL)
         # -----------------------------------------
-        topic_names = pd.read_sql("""
-        SELECT bank_name, topic_id, keywords
-        FROM complaint_topics
+        sentiments = pd.read_sql("""
+        SELECT 
+            bank_name,
+            AVG(sentiment_score) AS sentiment
+        FROM review_sentiments
+        GROUP BY bank_name
         """, conn)
 
         conn.close()
 
-        if topics.empty:
+        # -----------------------------------------
+        # HANDLE EMPTY
+        # -----------------------------------------
+        if topics.empty or sentiments.empty:
             print("⚠ No topic sentiment data found")
-            return {}
+
+            return pd.DataFrame({
+                "bank_name": [],
+                "topic_id": [],
+                "keywords": [],
+                "sentiment": [],
+                "volume": []
+            })
 
         # -----------------------------------------
-        # MERGE TO GET TOPIC LABELS
+        # MERGE (APPROX — same sentiment per bank)
         # -----------------------------------------
         merged = pd.merge(
             topics,
-            topic_names,
-            on=["bank_name", "topic_id"],
+            sentiments,
+            on="bank_name",
             how="left"
         )
 
         # -----------------------------------------
-        # FILTER LOW VOLUME (IMPORTANT)
+        # CLEAN DATA
+        # -----------------------------------------
+        merged["review_count"] = merged["review_count"].fillna(0)
+
+        # Rename for consistency
+        merged = merged.rename(columns={
+            "review_count": "volume"
+        })
+
+        # -----------------------------------------
+        # FILTER LOW VOLUME
         # -----------------------------------------
         merged = merged[merged["volume"] >= 5]
 
-        results = {}
+        if merged.empty:
+            print("⚠ No high-volume topics found")
+
+            return pd.DataFrame({
+                "bank_name": [],
+                "topic_id": [],
+                "keywords": [],
+                "sentiment": [],
+                "volume": []
+            })
 
         # -----------------------------------------
-        # TOP SUCCESS FACTORS PER BANK
+        # SORT (SUCCESS FACTORS)
         # -----------------------------------------
-        for bank in merged["bank_name"].unique():
+        merged = merged.sort_values(
+            ["bank_name", "sentiment"],
+            ascending=[True, False]
+        )
 
-            df = merged[merged["bank_name"] == bank]
+        print("\nTop Transformation Success Factors:\n")
 
-            if df.empty:
-                continue
-
-            df = df.sort_values("sentiment", ascending=False)
-
-            top = df.head(5)
-
-            results[bank] = [
-                {
-                    "topic_id": int(row["topic_id"]),
-                    "keywords": row["keywords"],
-                    "sentiment": round(float(row["sentiment"]), 3),
-                    "volume": int(row["volume"])
-                }
-                for _, row in top.iterrows()
-            ]
-
-        return results
+        return merged.head(20)

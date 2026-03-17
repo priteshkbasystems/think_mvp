@@ -3,13 +3,14 @@ from collections import defaultdict
 from sentence_transformers import SentenceTransformer
 from scripts.utils.sentiment_utils import analyze_sentiment
 from models.sentiment_model import SentimentModel
+import time
 
 
 class AspectSentimentAnalyzer:
 
     def __init__(self):
 
-        print("Loading Aspect Sentiment Analyzer...")
+        print("🚀 Loading Aspect Sentiment Analyzer...")
 
         self.embedder = SentenceTransformer("all-MiniLM-L6-v2")
         self.sentiment_model = SentimentModel()
@@ -24,41 +25,77 @@ class AspectSentimentAnalyzer:
             "user experience"
         ]
 
+        # ✅ Precompute aspect embeddings once
         self.aspect_embeddings = self.embedder.encode(self.aspects)
 
-    def classify_aspect(self, text):
+        print("✅ Aspect model ready")
 
-        emb = self.embedder.encode([text])[0]
+    # -----------------------------------------
+    # Batch Aspect Classification
+    # -----------------------------------------
+    def classify_aspect_batch(self, texts):
 
-        scores = np.dot(self.aspect_embeddings, emb)
+        # ✅ Encode all texts in batch (FAST)
+        text_embeddings = self.embedder.encode(texts, batch_size=128)
 
-        idx = np.argmax(scores)
+        # Cosine similarity via dot product
+        scores = np.dot(text_embeddings, self.aspect_embeddings.T)
 
-        return self.aspects[idx]
+        # Get best matching aspect index
+        indices = np.argmax(scores, axis=1)
 
-    def analyze(self, texts, ratings):
+        return [self.aspects[i] for i in indices]
 
-        sentiments = self.sentiment_model.predict_batch(texts)
+    # -----------------------------------------
+    # MAIN ANALYSIS (BATCH + LOGS)
+    # -----------------------------------------
+    def analyze(self, texts, ratings, batch_size=128):
+
+        print("\n🔎 Starting Aspect Sentiment Analysis...")
+        print(f"Total Reviews: {len(texts)}\n")
+
+        start_time = time.time()
 
         aspect_scores = defaultdict(list)
 
-        for text, rating, sentiment in zip(texts, ratings, sentiments):
+        for i in range(0, len(texts), batch_size):
 
-            label = sentiment["label"]
-            score = sentiment["score"]
+            batch_texts = texts[i:i+batch_size]
+            batch_ratings = ratings[i:i+batch_size]
 
-            if label == "NEGATIVE":
-                score = -score
+            # ✅ Batch sentiment prediction
+            sentiments = self.sentiment_model.predict_batch(batch_texts)
 
-            final_score, _ = analyze_sentiment(score, rating)
+            # ✅ Batch aspect classification
+            aspects = self.classify_aspect_batch(batch_texts)
 
-            aspect = self.classify_aspect(text)
+            for text, rating, sentiment, aspect in zip(
+                batch_texts, batch_ratings, sentiments, aspects
+            ):
 
-            aspect_scores[aspect].append(final_score)
+                score = sentiment["score"]
 
+                if sentiment["label"] == "NEGATIVE":
+                    score = -score
+
+                final_score, _ = analyze_sentiment(score, rating)
+
+                aspect_scores[aspect].append(final_score)
+
+            # ✅ Progress Logging
+            processed = min(i + batch_size, len(texts))
+            elapsed = round(time.time() - start_time, 2)
+
+            print(f"✅ Processed {processed}/{len(texts)} | ⏱ {elapsed}s")
+
+        # -----------------------------------------
+        # Aggregate results
+        # -----------------------------------------
         result = {}
 
         for aspect, scores in aspect_scores.items():
             result[aspect] = float(np.mean(scores))
+
+        print("\n🎯 Aspect Sentiment Completed\n")
 
         return result
