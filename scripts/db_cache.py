@@ -84,6 +84,7 @@ def init_db():
             bank_name TEXT,
             year INTEGER,
             review_text TEXT,
+            topic_id INTEGER,
             review_hash TEXT UNIQUE,
             rating REAL,
             sentiment_score REAL,

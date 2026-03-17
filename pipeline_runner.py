@@ -492,7 +492,18 @@ def step26():
 
 run_step("STEP 26 — TRANSFORMATION LAG ANALYSIS", step26)
 
+# ==========================================
+# STEP 27 — TOPIC MAPPING ENGINE
+# ==========================================
 
+def step27():
+
+    from scripts.topic_mapping_engine import TopicMappingEngine
+
+    engine = TopicMappingEngine()
+    engine.run()
+
+run_step("STEP 27 — TOPIC MAPPING", step27)
 # ==========================================
 # PIPELINE FINISHED
 # ==========================================
