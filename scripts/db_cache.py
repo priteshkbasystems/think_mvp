@@ -195,6 +195,74 @@ def init_db():
     PRIMARY KEY(bank_name, year)
     )
     """)
+    # ------------------------------
+    # NARRATIVE SCORES (RESTORED)
+    # ------------------------------
+   
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS narrative_scores (
+    bank_name TEXT,
+    year INTEGER,
+    score REAL,
+    PRIMARY KEY (bank_name, year)
+    )
+    """)
+
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS narrative_sentiment_correlation (
+    bank_name TEXT PRIMARY KEY,
+    correlation REAL
+    )
+    """)
+
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS narrative_lag (
+    bank_name TEXT PRIMARY KEY,
+    lag_months INTEGER
+    )
+    """)
+
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS narrative_highlights (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    bank_name TEXT,
+    year INTEGER,
+    highlight TEXT
+    )
+    """)
+
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS sentiment_predictions (
+    bank_name TEXT,
+    year INTEGER,
+    predicted_sentiment REAL,
+    PRIMARY KEY (bank_name, year)
+    )
+    """)
+    # ------------------------------
+    # SOURCE CONCORDANCE (RESTORED)
+    # ------------------------------
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS source_concordance (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    bank_name TEXT,
+    review_source TEXT,
+    avg_sentiment REAL
+    )
+    """)
+    # ------------------------------
+    # SENTIMENT TAXONOMY (RESTORED)
+    # ------------------------------
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS sentiment_taxonomy (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    bank_name TEXT,
+    year INTEGER,
+    review_text TEXT,
+    emotion TEXT,
+    category TEXT
+    )
+    """)
     conn.commit()
     conn.close()
 
