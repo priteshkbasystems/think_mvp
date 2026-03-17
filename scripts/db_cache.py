@@ -435,3 +435,22 @@ def update_topic_cache(file_path, last_modified):
 
     conn.commit()
     conn.close()
+
+# ==========================================
+# CORPORATE TOPIC SENTIMENT (FIX)
+# ==========================================
+def save_corporate_topic_sentiment(bank_name, year, topic_scores):
+
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    for topic, score in topic_scores.items():
+
+        cursor.execute("""
+        INSERT OR REPLACE INTO corporate_topic_sentiment
+        (bank_name, year, topic, sentiment)
+        VALUES (?, ?, ?, ?)
+        """, (bank_name, year, topic, score))
+
+    conn.commit()
+    conn.close()
