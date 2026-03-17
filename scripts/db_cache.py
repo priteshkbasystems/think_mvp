@@ -277,6 +277,26 @@ def init_db():
     PRIMARY KEY(step_name, bank_name, year)
     )
     """)
+
+    # ==========================================
+    # PDF TEXT CACHE
+    # ==========================================
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS pdf_text_cache (
+    file_path TEXT PRIMARY KEY,
+    text TEXT
+    )
+    """)
+
+    # ==========================================
+    # CORPORATE TOPIC CACHE
+    # ==========================================
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS corporate_topic_cache (
+    file_path TEXT PRIMARY KEY,
+    last_modified REAL
+    )
+    """)
     # ==========================================
     conn.commit()
     conn.close()
@@ -599,6 +619,75 @@ def save_sentiment_taxonomy(bank_name, year, text, emotion, category):
     (bank_name, year, review_text, emotion, category)
     VALUES (?, ?, ?, ?, ?)
     """, (bank_name, year, text, emotion, category))
+
+    conn.commit()
+    conn.close()
+
+# ==========================================
+# GET PDF TEXT
+# ==========================================
+def get_cached_pdf_text(file_path):
+
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+
+    cursor.execute(
+        "SELECT text FROM pdf_text_cache WHERE file_path=?",
+        (file_path,)
+    )
+
+    row = cursor.fetchone()
+    conn.close()
+
+    return row[0] if row else None
+
+# ==========================================
+# SAVE PDF TEXT
+# ==========================================
+def save_pdf_text(file_path, text):
+
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+
+    cursor.execute("""
+        INSERT OR REPLACE INTO pdf_text_cache (file_path, text)
+        VALUES (?, ?)
+    """, (file_path, text))
+
+    conn.commit()
+    conn.close()
+
+# ==========================================
+# GET CORPORATE TOPIC CACHE
+# ==========================================
+def get_topic_cache(file_path):
+
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+
+    cursor.execute(
+        "SELECT last_modified FROM corporate_topic_cache WHERE file_path=?",
+        (file_path,)
+    )
+
+    row = cursor.fetchone()
+    conn.close()
+
+    return row[0] if row else None
+
+
+# ==========================================
+# UPDATE CORPORATE TOPIC CACHE
+# ==========================================
+def update_topic_cache(file_path, last_modified):
+
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+
+    cursor.execute("""
+        INSERT OR REPLACE INTO corporate_topic_cache
+        VALUES (?, ?)
+    """, (file_path, last_modified))
 
     conn.commit()
     conn.close()

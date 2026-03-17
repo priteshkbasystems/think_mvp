@@ -4,7 +4,6 @@ import json
 import numpy as np
 from PyPDF2 import PdfReader
 from scipy.stats import pearsonr
-from trend_analysis import main as run_trend_engine
 
 from sentence_transformers import SentenceTransformer
 from sklearn.metrics.pairwise import cosine_similarity
@@ -18,8 +17,12 @@ from scripts.db_cache import (
     get_cached_score,
     update_cache,
     get_embedding,
-    save_embedding
+    save_embedding,
+    get_cached_pdf_text,
+    save_pdf_text
 )
+
+from trend_analysis import main as run_trend_engine
 
 init_db()
 
@@ -33,129 +36,46 @@ FINAL_OUTPUT_PATH = "/content/drive/MyDrive/THINK_MVP/04_Analysis_Output/transfo
 
 MAX_SENTENCES = 300
 
+# ==========================================
+# TRANSFORMATION THEMES
+# ==========================================
+
 TRANSFORMATION_THEMES = [
-
-    # Digital Transformation Core
-    "digital transformation",
-    "digital banking strategy",
-    "digital banking",
-    "digital operating model",
-    "technology driven banking",
-    "digital capability",
-    "digital organization",
-
-    # Customer Experience Transformation
-    "digital customer experience",
-    "customer journey",
-    "omnichannel banking",
-    "mobile banking",
-    "personalized financial services",
-    "digital service channels",
-
-    # Artificial Intelligence & Data
-    "artificial intelligence",
-    "AI",
-    "machine learning",
-    "advanced analytics",
-    "data analytics",
-    "predictive analytics",
-    "data driven",
-    "data platform",
-    "big data",
-
-    # Automation & Efficiency
-    "automation",
-    "process automation",
-    "robotic process automation",
-    "RPA",
-    "intelligent automation",
-    "operational efficiency",
-    "digitization of processes",
-
-    # Digital Banking Platforms
-    "digital platform",
-    "mobile banking platform",
-    "online banking platform",
-    "digital banking platform",
-    "next generation banking",
-    "platform banking",
-
-    # Payments Innovation
-    "digital payments",
-    "real time payments",
-    "cashless society",
-    "contactless payment",
-    "QR payment",
-    "mobile wallet",
-    "digital payment ecosystem",
-
-    # Fintech & Ecosystem
-    "fintech",
-    "fintech partnership",
-    "open banking",
-    "banking ecosystem",
-    "platform ecosystem",
-    "banking as a service",
-    "API banking",
-    "digital ecosystem",
-
-    # Cloud & Infrastructure
-    "cloud",
-    "cloud computing",
-    "cloud infrastructure",
-    "core banking modernization",
-    "IT modernization",
-    "microservices",
-    "technology infrastructure",
-
-    # Cybersecurity & Digital Risk
-    "cybersecurity",
-    "digital security",
-    "digital identity",
-    "authentication",
-    "fraud detection",
-
-    # Innovation & R&D
-    "innovation lab",
-    "innovation center",
-    "technology innovation",
-    "digital innovation",
-    "research and development",
-    "venture investment",
-    "digital product innovation",
-
-    # ESG & Sustainable Transformation
-    "sustainability",
-    "ESG",
-    "green finance",
-    "sustainable finance",
-    "climate finance",
-
-    # Business Model Transformation
-    "business model transformation",
-    "digital first strategy",
-    "banking transformation",
-    "future of banking",
-    "branch to digital",
-    "technology driven bank"
+    "digital transformation","digital banking strategy","digital banking","digital operating model",
+    "technology driven banking","digital capability","digital organization",
+    "digital customer experience","customer journey","omnichannel banking","mobile banking",
+    "personalized financial services","digital service channels",
+    "artificial intelligence","AI","machine learning","advanced analytics","data analytics",
+    "predictive analytics","data driven","data platform","big data",
+    "automation","process automation","robotic process automation","RPA",
+    "intelligent automation","operational efficiency","digitization of processes",
+    "digital platform","mobile banking platform","online banking platform",
+    "next generation banking","platform banking",
+    "digital payments","real time payments","cashless society","contactless payment",
+    "QR payment","mobile wallet","digital payment ecosystem",
+    "fintech","fintech partnership","open banking","banking ecosystem","platform ecosystem",
+    "banking as a service","API banking","digital ecosystem",
+    "cloud","cloud computing","cloud infrastructure","core banking modernization",
+    "IT modernization","microservices","technology infrastructure",
+    "cybersecurity","digital security","digital identity","authentication","fraud detection",
+    "innovation lab","innovation center","technology innovation","digital innovation",
+    "research and development","venture investment","digital product innovation",
+    "sustainability","ESG","green finance","sustainable finance","climate finance",
+    "business model transformation","digital first strategy","banking transformation",
+    "future of banking","branch to digital","technology driven bank"
 ]
 
-
 # ==========================================
-# LOAD AI MODEL
+# LOAD MODEL
 # ==========================================
 
 print("Loading AI transformation model...")
-
 embedding_model = SentenceTransformer("all-MiniLM-L6-v2")
-
 THEME_EMBEDDINGS = embedding_model.encode(TRANSFORMATION_THEMES)
-
 print("Model ready.")
 
-
 # ==========================================
-# OCR EXTRACTION
+# OCR
 # ==========================================
 
 def extract_text_with_ocr(pdf_path):
@@ -163,28 +83,33 @@ def extract_text_with_ocr(pdf_path):
     text = ""
 
     try:
-
         images = convert_from_path(pdf_path, dpi=200)
 
         for img in images:
             text += pytesseract.image_to_string(img)
 
-    except Exception:
-        print("OCR failed for:", pdf_path)
+    except:
+        print("OCR failed:", pdf_path)
 
     return text.lower()
 
-
 # ==========================================
-# PDF TEXT EXTRACTION
+# PDF TEXT EXTRACTION (WITH CACHE)
 # ==========================================
 
 def extract_text_from_pdf(pdf_path):
 
+    # 🔥 STEP 1 — CHECK CACHE
+    cached_text = get_cached_pdf_text(pdf_path)
+
+    if cached_text:
+        print("✔ Using cached text:", os.path.basename(pdf_path))
+        return cached_text
+
+    print("📄 Extracting text:", os.path.basename(pdf_path))
+
     try:
-
         reader = PdfReader(pdf_path)
-
         text = ""
 
         for page in reader.pages:
@@ -192,132 +117,76 @@ def extract_text_from_pdf(pdf_path):
 
         text = text.lower()
 
-        # If almost no text extracted → run OCR
         if len(text.strip()) < 100:
-
-            print("Running OCR for:", os.path.basename(pdf_path))
-
+            print("⚠ Running OCR:", os.path.basename(pdf_path))
             text = extract_text_with_ocr(pdf_path)
+
+        # 🔥 SAVE CACHE
+        save_pdf_text(pdf_path, text)
 
         return text
 
-    except Exception:
-
-        print("PDF read failed:", pdf_path)
-
+    except:
+        print("❌ PDF read failed:", pdf_path)
         return ""
 
-
 # ==========================================
-# AUTO BANK DISCOVERY
-# ==========================================
-
-def discover_banks(base_path):
-
-    banks = {}
-
-    for bank_folder in os.listdir(base_path):
-
-        bank_path = os.path.join(base_path, bank_folder)
-
-        if not os.path.isdir(bank_path):
-            continue
-
-        components = {
-            "annual_reports": None,
-            "investor_presentations": None
-        }
-
-        for sub in os.listdir(bank_path):
-
-            sub_path = os.path.join(bank_path, sub)
-
-            if not os.path.isdir(sub_path):
-                continue
-
-            sub_lower = sub.lower()
-
-            if sub_lower == "annual_reports":
-                components["annual_reports"] = sub_path
-
-            elif sub_lower in ["investor_presentations", "investors_presentations"]:
-                components["investor_presentations"] = sub_path
-
-        banks[bank_folder] = components
-
-    return banks
-
-
-# ==========================================
-# EXTRACT YEAR
+# FILE CACHE CHECK
 # ==========================================
 
-def extract_year_from_path(path):
+def should_process_pdf(file_path):
 
-    match = re.search(r"(20\d{2})", path)
+    last_modified = get_file_modified_time(file_path)
 
-    if match:
-        return int(match.group(1))
+    cached = get_cached_score(file_path)
 
-    return None
+    if cached is None:
+        return True, last_modified
 
+    cached_time, _, _ = cached
+
+    if cached_time != last_modified:
+        return True, last_modified
+
+    return False, last_modified
 
 # ==========================================
-# TRANSFORMATION SCORE
+# SCORE
 # ==========================================
 
 def compute_transformation_score(text):
 
     sentences = re.split(r"[.!?]", text)
-
     sentences = [s.strip() for s in sentences if len(s.strip()) > 30]
-
     sentences = sentences[:MAX_SENTENCES]
 
     if not sentences:
         return 0
 
-    sentence_embeddings = []
+    embeddings = []
 
-    for sentence in sentences:
+    for s in sentences:
 
-        emb = get_embedding(sentence)
+        emb = get_embedding(s)
 
         if emb is None:
+            emb = embedding_model.encode([s])[0]
+            save_embedding(s, emb)
 
-            emb = embedding_model.encode([sentence])[0]
+        embeddings.append(emb)
 
-            save_embedding(sentence, emb)
+    embeddings = np.array(embeddings)
 
-        sentence_embeddings.append(emb)
+    sim = cosine_similarity(embeddings, THEME_EMBEDDINGS)
 
-    sentence_embeddings = np.array(sentence_embeddings)
+    scores = sim.max(axis=1)
 
-    similarity_matrix = cosine_similarity(
-        sentence_embeddings,
-        THEME_EMBEDDINGS
-    )
+    strong = [x for x in scores if x > 0.45]
 
-    max_scores = similarity_matrix.max(axis=1)
-
-    threshold = 0.45
-
-    # Count sentences that strongly match transformation themes
-    strong_matches = [s for s in max_scores if s > threshold]
-
-    total_sentences = len(max_scores)
-
-    if total_sentences == 0:
-        return 0.0
-
-    # score = proportion of transformation sentences
-    score = len(strong_matches) / total_sentences
-
-    return score
-
+    return len(strong) / len(scores) if scores.size else 0
 
 # ==========================================
-# SCAN PDF FOLDER
+# FOLDER SCAN (OPTIMIZED)
 # ==========================================
 
 def compute_scores_from_folder(folder_path):
@@ -327,62 +196,64 @@ def compute_scores_from_folder(folder_path):
     if not folder_path or not os.path.exists(folder_path):
         return scores
 
-    for root, dirs, files in os.walk(folder_path):
+    for root, _, files in os.walk(folder_path):
 
         for file in files:
 
             if not file.endswith(".pdf"):
                 continue
 
-            full_path = os.path.join(root, file)
-
-            print("Processing PDF:", file)
+            path = os.path.join(root, file)
 
             year = extract_year_from_path(root)
-
             if not year:
                 continue
 
-            last_modified = get_file_modified_time(full_path)
+            should_run, last_modified = should_process_pdf(path)
 
-            cached = get_cached_score(full_path)
+            if not should_run:
+                print("✔ Skipping unchanged:", file)
 
-            if cached and cached[0] == last_modified:
-                scores[cached[1]] = cached[2]
+                cached = get_cached_score(path)
+                if cached:
+                    scores[cached[1]] = cached[2]
+
                 continue
 
-            text = extract_text_from_pdf(full_path)
+            text = extract_text_from_pdf(path)
 
             if not text:
                 continue
 
-            intensity_score = compute_transformation_score(text)
+            score = compute_transformation_score(text)
 
-            scores[year] = intensity_score
+            scores[year] = score
 
-            update_cache(full_path, last_modified, year, intensity_score)
+            update_cache(path, last_modified, year, score)
 
     return scores
 
+# ==========================================
+# UTILS
+# ==========================================
 
-# ==========================================
-# NORMALIZE
-# ==========================================
+def extract_year_from_path(path):
+    match = re.search(r"(20\d{2})", path)
+    return int(match.group(1)) if match else None
+
 
 def normalize_scores(scores):
 
     if not scores:
         return scores
 
-    max_val = max(scores.values())
+    m = max(scores.values())
 
-    if max_val > 0:
-
-        for year in scores:
-            scores[year] = scores[year] / max_val
+    if m > 0:
+        for k in scores:
+            scores[k] /= m
 
     return scores
-
 
 # ==========================================
 # LOAD SENTIMENT
@@ -390,76 +261,44 @@ def normalize_scores(scores):
 
 def load_sentiment_trend():
 
-    trend_file = os.path.join(
-        TREND_OUTPUT_PATH,
-        "bank_trend_data.json"
-    )
+    path = os.path.join(TREND_OUTPUT_PATH, "bank_trend_data.json")
 
-    if not os.path.exists(trend_file):
-
-        print("⚠ Sentiment trend data not found. Running Trend Engine...")
-
+    if not os.path.exists(path):
         run_trend_engine()
 
-    if not os.path.exists(trend_file):
-
-        print("❌ Trend generation failed.")
-
+    if not os.path.exists(path):
         return {}
 
-    with open(trend_file, "r", encoding="utf-8") as f:
+    with open(path) as f:
+        raw = json.load(f)
 
-        raw_data = json.load(f)
-
-    sentiment_data = {}
-
-    for bank_name, bank_data in raw_data.items():
-
-        sentiment_data[bank_name] = {
-
-            int(year): score
-            for year, score in bank_data["yearly_sentiment"].items()
-
-        }
-
-    return sentiment_data
-
+    return {
+        bank: {int(y): v for y, v in data["yearly_sentiment"].items()}
+        for bank, data in raw.items()
+    }
 
 # ==========================================
 # CORRELATION
 # ==========================================
 
-def compute_correlation(transformation_scores, sentiment_scores):
+def compute_correlation(t, s):
 
-    overlapping_years = sorted(
+    years = sorted(set(t.keys()) & set(y - 1 for y in s.keys()))
 
-        set(transformation_scores.keys()) &
-        set(year - 1 for year in sentiment_scores.keys())
-
-    )
-
-    if len(overlapping_years) < 2:
+    if len(years) < 2:
         return None
 
-    x = []
-    y = []
+    x, y = [], []
 
-    for year in overlapping_years:
-
-        next_year = year + 1
-
-        if next_year in sentiment_scores:
-
-            x.append(transformation_scores[year])
-            y.append(sentiment_scores[next_year])
+    for yr in years:
+        if yr + 1 in s:
+            x.append(t[yr])
+            y.append(s[yr + 1])
 
     if len(x) < 2:
         return None
 
-    correlation, _ = pearsonr(x, y)
-
-    return correlation
-
+    return pearsonr(x, y)[0]
 
 # ==========================================
 # MAIN
@@ -467,77 +306,43 @@ def compute_correlation(transformation_scores, sentiment_scores):
 
 def main():
 
-    print("\n🔎 Running Transformation Correlation Engine...\n")
+    print("\n🔎 Running Transformation Engine\n")
 
     banks = discover_banks(BASE_CORP_PATH)
+    sentiments = load_sentiment_trend()
 
-    sentiment_trends = load_sentiment_trend()
+    report = []
 
-    report_lines = []
+    for bank, comp in banks.items():
 
-    report_lines.append("TRANSFORMATION IMPACT CORRELATION REPORT")
-    report_lines.append("=========================================\n")
+        name = bank.replace("_", " ")
+        print("\n🏦", name)
 
-    for bank_folder, components in banks.items():
+        annual = compute_scores_from_folder(comp["annual_reports"])
+        investor = compute_scores_from_folder(comp["investor_presentations"])
 
-        display_name = bank_folder.replace("_", " ")
+        scores = annual.copy()
 
-        print(f"\nAnalyzing {display_name}...")
+        for y, v in investor.items():
+            scores[y] = (scores.get(y, 0) + v) / 2
 
-        annual_scores = compute_scores_from_folder(components["annual_reports"])
+        scores = normalize_scores(scores)
 
-        investor_scores = compute_scores_from_folder(components["investor_presentations"])
+        corr = compute_correlation(scores, sentiments.get(name, {}))
 
-        transformation_scores = annual_scores.copy()
+        report.append(f"\n{name}")
 
-        for year, score in investor_scores.items():
-
-            if year in transformation_scores:
-
-                transformation_scores[year] = (
-                    transformation_scores[year] + score
-                ) / 2
-
-            else:
-                transformation_scores[year] = score
-
-        transformation_scores = normalize_scores(transformation_scores)
-
-        sentiment_scores = sentiment_trends.get(display_name, {})
-
-        correlation = compute_correlation(transformation_scores, sentiment_scores)
-
-        report_lines.append(f"\n🏦 {display_name}")
-
-        if correlation is None:
-
-            report_lines.append("Insufficient data for correlation.")
+        if corr is None:
+            report.append("Insufficient data")
             continue
 
-        report_lines.append(
-            f"Correlation (Transformation → Next Year Sentiment): {correlation:.3f}"
-        )
+        report.append(f"Correlation: {corr:.3f}")
 
-        if correlation > 0.7:
-            impact = "High Positive Impact"
-        elif correlation > 0.3:
-            impact = "Moderate Positive Impact"
-        elif correlation > -0.3:
-            impact = "No Clear Impact"
-        else:
-            impact = "Negative Impact"
+    with open(FINAL_OUTPUT_PATH, "w") as f:
+        f.write("\n".join(report))
 
-        report_lines.append(f"Impact Assessment: {impact}")
+    print("\n📄 Report saved")
 
-    final_report = "\n".join(report_lines)
-
-    with open(FINAL_OUTPUT_PATH, "w", encoding="utf-8") as f:
-        f.write(final_report)
-
-    print("\n📄 Report saved to:", FINAL_OUTPUT_PATH)
-
-    print("\n" + final_report)
-
-
+# ==========================================
 if __name__ == "__main__":
     main()
