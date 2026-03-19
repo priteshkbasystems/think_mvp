@@ -192,7 +192,7 @@ class FinancialExtractor:
             files = os.listdir(base_path)
             print(f"📄 Files: {files}")
 
-            excel_files = [f for f in files if f.endswith((".xlsx", ".xls"))]
+            excel_files = [f for f in files if f.lower().endswith((".xlsx", ".xls"))]
 
             if not excel_files:
                 self.warn("No Excel files found")
