@@ -9,13 +9,13 @@ sys.path.insert(0, "/content/drive/MyDrive/THINK_MVP")
 DB_PATH = "/content/drive/MyDrive/THINK_MVP/04_Analysis_Output/transformation_cache.db"
 BASE_PATH = "/content/drive/MyDrive/THINK_MVP/01_Corporate_Documents"
 
-print("🔥 FINAL FINANCIAL EXTRACTOR (ULTIMATE PRODUCTION) LOADED 🔥")
+print("🔥 FINAL FINANCIAL EXTRACTOR (TRUE FINAL VERSION) LOADED 🔥")
 
 
 class FinancialExtractor:
 
     def __init__(self):
-        print("\n🚀 Financial Metrics Extractor (ULTIMATE VERSION)\n")
+        print("\n🚀 Financial Metrics Extractor (TRUE FINAL VERSION)\n")
 
     def log(self, msg):
         print(f"[LOG] {msg}")
@@ -40,7 +40,7 @@ class FinancialExtractor:
             return None
 
     # -------------------------------
-    # 🔥 Bangkok Specific Extraction (FINAL)
+    # 🔥 Bangkok Enhanced Extraction
     # -------------------------------
     def extract_bangkok(self, df):
 
@@ -54,33 +54,46 @@ class FinancialExtractor:
 
         year = int(year_match.group(1))
 
+        # STEP 1: regex
         patterns = {
-            "revenue": [
-                r"(net interest income)[^0-9]{0,50}([\d,]+)",
-                r"(total operating income)[^0-9]{0,50}([\d,]+)"
-            ],
-            "net_profit": [
-                r"(profit attributable)[^0-9]{0,50}([\d,]+)",
-                r"(net profit)[^0-9]{0,50}([\d,]+)"
-            ],
-            "total_assets": [
-                r"(total assets)[^0-9]{0,50}([\d,]+)"
-            ]
+            "revenue": r"(net interest income|total operating income)[^0-9]{0,50}([\d,]+)",
+            "net_profit": r"(profit attributable|net profit)[^0-9]{0,50}([\d,]+)",
+            "total_assets": r"(total assets)[^0-9]{0,50}([\d,]+)"
         }
 
-        for metric, pattern_list in patterns.items():
-            for pattern in pattern_list:
+        for metric, pattern in patterns.items():
+            match = re.search(pattern, text)
+            if match:
+                value = self.clean_value(match.group(2))
+                if value and value > 1000:
+                    results.setdefault(year, {})
+                    results[year][metric] = value
+                    self.log(f"Bangkok regex {metric} → {value}")
 
-                match = re.search(pattern, text)
+        # STEP 2: row fallback (if missing)
+        keyword_map = {
+            "net_profit": ["profit attributable", "net profit"],
+            "total_assets": ["total assets"]
+        }
 
-                if match:
-                    value = self.clean_value(match.group(2))
+        for i, row in df.iterrows():
 
-                    if value and value > 1000:
-                        results.setdefault(year, {})
-                        results[year][metric] = value
-                        self.log(f"Bangkok: {metric} → {value}")
-                        break
+            row_text = " ".join([str(x).lower() for x in row.values])
+
+            for metric, keywords in keyword_map.items():
+
+                if metric in results.get(year, {}):
+                    continue
+
+                if any(k in row_text for k in keywords):
+
+                    for val in row.values:
+                        value = self.clean_value(val)
+                        if value and value > 1000:
+                            results.setdefault(year, {})
+                            results[year][metric] = value
+                            self.log(f"Bangkok row {metric} → {value}")
+                            break
 
         return results
 
@@ -92,7 +105,6 @@ class FinancialExtractor:
 
         sheet_lower = sheet_name.lower()
 
-        # Skip irrelevant sheets
         if any(x in sheet_lower for x in ["change", "equity", "cash", "cf"]):
             return {}
 
@@ -139,13 +151,11 @@ class FinancialExtractor:
 
                 if any(k in row_text for k in keywords):
 
-                    # same row
                     for val in row.values:
                         value = self.clean_value(val)
                         if value and value > 1000:
                             temp_store[metric].append(value)
 
-                    # next row
                     if i + 1 < len(df):
                         next_row = df.iloc[i + 1]
                         for val in next_row.values:
@@ -171,7 +181,6 @@ class FinancialExtractor:
         self.log(f"\n📄 Processing: {file_path}")
 
         try:
-            # 🔥 Bangkok special handling
             if "bangkok" in file_path.lower():
                 df = pd.concat(pd.read_excel(file_path, sheet_name=None).values())
                 return self.extract_bangkok(df)
