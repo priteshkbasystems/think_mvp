@@ -9,13 +9,13 @@ sys.path.insert(0, "/content/drive/MyDrive/THINK_MVP")
 DB_PATH = "/content/drive/MyDrive/THINK_MVP/04_Analysis_Output/transformation_cache.db"
 BASE_PATH = "/content/drive/MyDrive/THINK_MVP/01_Corporate_Documents"
 
-print("🔥 FINAL FINANCIAL EXTRACTOR (ROW-AWARE VERSION) LOADED 🔥")
+print("🔥 FINAL FINANCIAL EXTRACTOR (ENTERPRISE VERSION) LOADED 🔥")
 
 
 class FinancialExtractor:
 
     def __init__(self):
-        print("\n🚀 Financial Metrics Extractor (FINAL FIX VERSION)\n")
+        print("\n🚀 Financial Metrics Extractor (FINAL ENTERPRISE VERSION)\n")
 
     def log(self, msg):
         print(f"[LOG] {msg}")
@@ -42,28 +42,23 @@ class FinancialExtractor:
     # -------------------------------
     def extract_from_df(self, df, sheet_name):
 
-        results = {}
-
         if df.empty:
-            return results
+            return {}
 
         sheet_lower = sheet_name.lower()
 
         if any(x in sheet_lower for x in ["change", "equity", "cash"]):
-            self.log(f"{sheet_name}: Skipped")
-            return results
+            return {}
 
-        # Detect year
         full_text = " ".join(df.astype(str).values.flatten()).lower()
-        year_match = re.search(r"(20\d{2})", full_text)
 
+        year_match = re.search(r"(20\d{2})", full_text)
         if not year_match:
-            return results
+            return {}
 
         year = int(year_match.group(1))
         self.log(f"{sheet_name}: Year → {year}")
 
-        # 🔥 KEYWORD MAP
         keyword_map = {
             "revenue": ["interest income", "total operating income", "net interest income"],
             "net_profit": ["net profit", "profit for the year", "profit attributable"],
@@ -71,49 +66,52 @@ class FinancialExtractor:
             "total_assets": ["total assets"]
         }
 
-        # 🔥 ROW-BASED EXTRACTION
+        temp_store = {k: [] for k in keyword_map.keys()}
+
         for i, row in df.iterrows():
 
             row_text = " ".join([str(x).lower() for x in row.values])
 
             for metric, keywords in keyword_map.items():
 
-                # Only allow revenue in income sheets
                 if metric == "revenue" and not any(x in sheet_lower for x in ["income", "pl", "comprehensive"]):
                     continue
 
                 if any(k in row_text for k in keywords):
 
-                    # search value in same row
+                    # same row
                     for val in row.values:
                         value = self.clean_value(val)
-
                         if value and value > 1000:
-                            results.setdefault(year, {})
-                            results[year][metric] = value
+                            temp_store[metric].append(value)
 
-                            self.log(f"{sheet_name}: {metric} → {value}")
-                            break
-
-                    # 🔥 ALSO CHECK NEXT ROW (VERY IMPORTANT)
-                    if metric not in results.get(year, {}) and i + 1 < len(df):
-
+                    # next row
+                    if i + 1 < len(df):
                         next_row = df.iloc[i + 1]
-
                         for val in next_row.values:
                             value = self.clean_value(val)
-
                             if value and value > 1000:
-                                results.setdefault(year, {})
-                                results[year][metric] = value
+                                temp_store[metric].append(value)
 
-                                self.log(f"{sheet_name}: {metric} (next row) → {value}")
-                                break
+        # -------------------------------
+        # PICK BEST VALUE (MAX)
+        # -------------------------------
+        final = {}
 
-        return results
+        for metric, values in temp_store.items():
+            if values:
+                best_value = max(values)
+                final[metric] = best_value
+                self.log(f"{sheet_name}: FINAL {metric} → {best_value}")
+
+        if final:
+            return {year: final}
+
+        return {}
 
     # -------------------------------
     def process_excel(self, file_path):
+
         all_results = {}
 
         self.log(f"\n📄 Processing: {file_path}")
@@ -132,6 +130,32 @@ class FinancialExtractor:
 
         except Exception as e:
             self.warn(f"File error: {e}")
+
+        # -------------------------------
+        # 🔥 FALLBACK (for Bangkok)
+        # -------------------------------
+        if not all_results:
+            self.log("Fallback extraction triggered")
+
+            try:
+                df = pd.concat(pd.read_excel(file_path, sheet_name=None).values())
+                text = " ".join(df.astype(str).values.flatten()).lower()
+
+                year_match = re.search(r"(20\d{2})", text)
+
+                if year_match:
+                    year = int(year_match.group(1))
+
+                    profit_match = re.search(r"(profit attributable)[^0-9]{0,50}([\d,\.]+)", text)
+
+                    if profit_match:
+                        value = self.clean_value(profit_match.group(2))
+                        if value:
+                            all_results[year] = {"net_profit": value}
+                            self.log(f"Fallback net_profit → {value}")
+
+            except:
+                pass
 
         self.log(f"📊 Extracted → {all_results}")
         return all_results
