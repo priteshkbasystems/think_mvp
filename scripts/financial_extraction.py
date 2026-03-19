@@ -4,19 +4,18 @@ import sqlite3
 import pandas as pd
 import sys
 
-# Ensure correct project path
 sys.path.insert(0, "/content/drive/MyDrive/THINK_MVP")
 
 DB_PATH = "/content/drive/MyDrive/THINK_MVP/04_Analysis_Output/transformation_cache.db"
 BASE_PATH = "/content/drive/MyDrive/THINK_MVP/01_Corporate_Documents"
 
-print("🔥 FINAL FINANCIAL EXTRACTOR (TEXT-BASED) LOADED 🔥")
+print("🔥 FINAL FINANCIAL EXTRACTOR (PRODUCTION) LOADED 🔥")
 
 
 class FinancialExtractor:
 
     def __init__(self):
-        print("\n🚀 Financial Metrics Extractor (FINAL SMART VERSION)\n")
+        print("\n🚀 Financial Metrics Extractor (FINAL PRODUCTION VERSION)\n")
 
     # -------------------------------
     def log(self, msg):
@@ -44,8 +43,6 @@ class FinancialExtractor:
             return None
 
     # -------------------------------
-    # 🔥 CORE: TEXT-BASED EXTRACTION
-    # -------------------------------
     def extract_from_df(self, df, sheet_name):
 
         results = {}
@@ -53,7 +50,14 @@ class FinancialExtractor:
         if df.empty:
             return results
 
-        # Convert entire sheet into text
+        sheet_lower = sheet_name.lower()
+
+        # 🚫 Skip irrelevant sheets
+        if any(x in sheet_lower for x in ["change", "equity", "cash"]):
+            self.log(f"{sheet_name}: Skipped (not relevant)")
+            return results
+
+        # Convert entire sheet to text
         full_text = " ".join(df.astype(str).values.flatten()).lower()
 
         # -------------------------------
@@ -69,14 +73,18 @@ class FinancialExtractor:
         self.log(f"{sheet_name}: Detected year → {year}")
 
         # -------------------------------
-        # Financial patterns
+        # 🔥 Banking-specific patterns
         # -------------------------------
         patterns = {
-            "revenue": r"(revenue|total income)[^0-9]{0,30}([\d,\.]+)",
-            "net_profit": r"(net profit|net income)[^0-9]{0,30}([\d,\.]+)",
-            "operating_income": r"(operating income|operating profit)[^0-9]{0,30}([\d,\.]+)",
-            "total_assets": r"(total assets)[^0-9]{0,30}([\d,\.]+)",
-            "roe": r"(return on equity|roe)[^0-9]{0,30}([\d\.]+)"
+            "revenue": r"(total operating income|total income|interest income|net interest income)[^0-9]{0,40}([\d,\.]+)",
+
+            "net_profit": r"(net profit|net income|profit for the year)[^0-9]{0,40}([\d,\.]+)",
+
+            "operating_income": r"(operating income|operating profit|profit before tax)[^0-9]{0,40}([\d,\.]+)",
+
+            "total_assets": r"(total assets)[^0-9]{0,40}([\d,\.]+)",
+
+            "roe": r"(return on equity|roe)[^0-9]{0,40}([\d\.]+)"
         }
 
         # -------------------------------
@@ -105,7 +113,6 @@ class FinancialExtractor:
 
         try:
             xls = pd.ExcelFile(file_path)
-
             self.log(f"Sheets: {xls.sheet_names}")
 
             for sheet in xls.sheet_names:
@@ -119,9 +126,7 @@ class FinancialExtractor:
                         self.warn(f"{sheet}: No data extracted")
 
                     for year, metrics in extracted.items():
-                        if year not in all_results:
-                            all_results[year] = {}
-
+                        all_results.setdefault(year, {})
                         all_results[year].update(metrics)
 
                 except Exception as e:
@@ -212,5 +217,4 @@ class FinancialExtractor:
 
 # -------------------------------
 def main():
-    extractor = FinancialExtractor()
-    extractor.run()
+    FinancialExtractor().run()
