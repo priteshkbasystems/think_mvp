@@ -4,18 +4,19 @@ import sqlite3
 import pandas as pd
 import sys
 
+# Ensure correct project path
 sys.path.insert(0, "/content/drive/MyDrive/THINK_MVP")
 
 DB_PATH = "/content/drive/MyDrive/THINK_MVP/04_Analysis_Output/transformation_cache.db"
 BASE_PATH = "/content/drive/MyDrive/THINK_MVP/01_Corporate_Documents"
 
-print("🔥 FINAL FINANCIAL EXTRACTOR (PRODUCTION) LOADED 🔥")
+print("🔥 FINAL FINANCIAL EXTRACTOR (HIGH ACCURACY) LOADED 🔥")
 
 
 class FinancialExtractor:
 
     def __init__(self):
-        print("\n🚀 Financial Metrics Extractor (FINAL PRODUCTION VERSION)\n")
+        print("\n🚀 Financial Metrics Extractor (FINAL STABLE VERSION)\n")
 
     # -------------------------------
     def log(self, msg):
@@ -73,31 +74,37 @@ class FinancialExtractor:
         self.log(f"{sheet_name}: Detected year → {year}")
 
         # -------------------------------
-        # 🔥 Banking-specific patterns
+        # 🔥 Banking-aware patterns
         # -------------------------------
         patterns = {
-            "revenue": r"(total operating income|total income|interest income|net interest income)[^0-9]{0,40}([\d,\.]+)",
+            "revenue": r"(total operating income|total income|interest income|net interest income|operating income)[^0-9]{0,50}([\d,\.]+)",
 
-            "net_profit": r"(net profit|net income|profit for the year)[^0-9]{0,40}([\d,\.]+)",
+            "net_profit": r"(net profit|net income|profit for the year)[^0-9]{0,50}([\d,\.]+)",
 
-            "operating_income": r"(operating income|operating profit|profit before tax)[^0-9]{0,40}([\d,\.]+)",
+            "operating_income": r"(operating income|operating profit|profit before tax)[^0-9]{0,50}([\d,\.]+)",
 
-            "total_assets": r"(total assets)[^0-9]{0,40}([\d,\.]+)",
+            "total_assets": r"(total assets)[^0-9]{0,50}([\d,\.]+)",
 
-            "roe": r"(return on equity|roe)[^0-9]{0,40}([\d\.]+)"
+            "roe": r"(return on equity|roe)[^0-9]{0,50}([\d\.]+)"
         }
 
         # -------------------------------
-        # Extract metrics
+        # Extract metrics safely
         # -------------------------------
         for metric, pattern in patterns.items():
+
+            # Restrict revenue only to income-type sheets
+            if metric == "revenue" and not any(x in sheet_lower for x in ["income", "pl", "comprehensive"]):
+                continue
 
             match = re.search(pattern, full_text)
 
             if match:
                 value = self.clean_value(match.group(2))
 
-                if value is not None:
+                # Ignore incorrect small values (noise)
+                if value is not None and value > 1000:
+
                     results.setdefault(year, {})
                     results[year][metric] = value
 
