@@ -3,7 +3,9 @@ import re
 import sqlite3
 import pandas as pd
 import sys
+
 sys.path.insert(0, "/content/drive/MyDrive/THINK_MVP")
+
 DB_PATH = "/content/drive/MyDrive/THINK_MVP/04_Analysis_Output/transformation_cache.db"
 BASE_PATH = "/content/drive/MyDrive/THINK_MVP/01_Corporate_Documents"
 
@@ -13,7 +15,7 @@ print("🔥 FINAL FINANCIAL EXTRACTOR LOADED 🔥")
 class FinancialExtractor:
 
     def __init__(self):
-        print("\n🚀 Financial Metrics Extractor (Excel - DEBUG MODE)\n")
+        print("\n🚀 Financial Metrics Extractor (SMART MODE)\n")
 
         self.metric_keywords = {
             "revenue": ["revenue", "total revenue", "income"],
@@ -34,25 +36,14 @@ class FinancialExtractor:
     def normalize_name(self, name):
         return name.lower().replace(" ", "").replace("_", "")
 
-    # -------------------------------
     def find_bank_folder(self, bank_name):
-
-        if not os.path.exists(BASE_PATH):
-            self.warn("Base path not found!")
-            return None
-
-        folders = os.listdir(BASE_PATH)
-
-        for folder in folders:
+        for folder in os.listdir(BASE_PATH):
             if self.normalize_name(folder) == self.normalize_name(bank_name):
                 return os.path.join(BASE_PATH, folder)
-
         return None
 
     # -------------------------------
     def clean_value(self, value):
-        if pd.isna(value):
-            return None
         try:
             value = str(value).replace(",", "").replace("%", "").strip()
             return float(value)
@@ -69,12 +60,11 @@ class FinancialExtractor:
         return years
 
     # -------------------------------
-    def match_metric(self, row_name):
-        row_name = str(row_name).lower()
-
+    def match_metric(self, text):
+        text = str(text).lower()
         for metric, keywords in self.metric_keywords.items():
             for keyword in keywords:
-                if keyword in row_name:
+                if keyword in text:
                     return metric
         return None
 
@@ -83,40 +73,96 @@ class FinancialExtractor:
         results = {}
 
         if df.empty:
-            self.warn(f"{sheet_name}: Empty sheet")
             return results
 
-        df = df.dropna(how="all")
+        df = df.fillna("")
 
-        first_col = df.columns[0]
+        # ===============================
+        # 1. COLUMN BASED
+        # ===============================
         year_cols = self.extract_years(df.columns)
 
-        if not year_cols:
-            self.warn(f"{sheet_name}: No year columns detected")
+        if year_cols:
+            self.log(f"{sheet_name}: Column-based years → {[y for _, y in year_cols]}")
+
+            first_col = df.columns[0]
+
+            for _, row in df.iterrows():
+                metric = self.match_metric(row[first_col])
+                if not metric:
+                    continue
+
+                for col, year in year_cols:
+                    value = self.clean_value(row[col])
+                    if value is None:
+                        continue
+
+                    results.setdefault(year, {})
+                    results[year][metric] = value
+
+            if results:
+                return results
+
+        # ===============================
+        # 2. ROW BASED (IMPORTANT)
+        # ===============================
+        self.log(f"{sheet_name}: Trying row-based extraction")
+
+        detected_year = None
+
+        # detect year
+        for i in range(min(10, len(df))):
+            row_text = " ".join([str(x) for x in df.iloc[i].values])
+            match = re.search(r"(20\d{2})", row_text)
+            if match:
+                detected_year = int(match.group(1))
+                self.log(f"{sheet_name}: Year detected → {detected_year}")
+                break
+
+        if not detected_year:
             return results
 
-        self.log(f"{sheet_name}: Years → {[y for _, y in year_cols]}")
-
         for _, row in df.iterrows():
+            row_text = " ".join([str(x).lower() for x in row.values])
 
-            metric = self.match_metric(row[first_col])
-
+            metric = self.match_metric(row_text)
             if not metric:
                 continue
 
-            for col, year in year_cols:
+            for val in row.values:
+                value = self.clean_value(val)
+                if value is not None:
+                    results.setdefault(detected_year, {})
+                    results[detected_year][metric] = value
+                    break
 
-                value = self.clean_value(row[col])
+        if results:
+            return results
 
-                if value is None:
-                    continue
+        # ===============================
+        # 3. FULL TEXT FALLBACK
+        # ===============================
+        self.log(f"{sheet_name}: Trying fallback extraction")
 
-                if year not in results:
-                    results[year] = {}
+        full_text = " ".join(df.astype(str).values.flatten()).lower()
 
-                results[year][metric] = value
+        year_match = re.search(r"(20\d{2})", full_text)
+        if not year_match:
+            return results
 
-                self.log(f"{sheet_name}: {metric} | {year} → {value}")
+        year = int(year_match.group(1))
+
+        for metric, keywords in self.metric_keywords.items():
+            for keyword in keywords:
+                pattern = rf"{keyword}[^0-9]{{0,20}}([\d,\.]+)"
+                match = re.search(pattern, full_text)
+
+                if match:
+                    value = self.clean_value(match.group(1))
+                    if value:
+                        results.setdefault(year, {})
+                        results[year][metric] = value
+                        break
 
         return results
 
@@ -124,40 +170,30 @@ class FinancialExtractor:
     def process_excel(self, file_path):
         all_results = {}
 
-        self.log(f"\n📄 Processing file: {file_path}")
+        self.log(f"\n📄 Processing: {file_path}")
 
         try:
             xls = pd.ExcelFile(file_path)
-            self.log(f"Sheets: {xls.sheet_names}")
 
             for sheet in xls.sheet_names:
-                try:
-                    df = xls.parse(sheet)
-                    extracted = self.extract_from_df(df, sheet)
+                df = xls.parse(sheet)
 
-                    if not extracted:
-                        self.warn(f"{sheet}: No data extracted")
+                extracted = self.extract_from_df(df, sheet)
 
-                    for year, metrics in extracted.items():
-                        if year not in all_results:
-                            all_results[year] = {}
-
-                        all_results[year].update(metrics)
-
-                except Exception as e:
-                    self.warn(f"{sheet} error: {e}")
+                for year, metrics in extracted.items():
+                    all_results.setdefault(year, {})
+                    all_results[year].update(metrics)
 
         except Exception as e:
-            self.warn(f"File error: {file_path} → {e}")
+            self.warn(f"File error: {e}")
 
-        self.log(f"📊 Extracted: {all_results}\n")
-
+        self.log(f"📊 Extracted → {all_results}")
         return all_results
 
     # -------------------------------
     def run(self):
 
-        print("\n🚀 STARTING FINANCIAL EXTRACTION DEBUG\n")
+        print("\n🚀 STARTING EXTRACTION\n")
 
         conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
@@ -165,52 +201,42 @@ class FinancialExtractor:
         cursor.execute("SELECT bank_name FROM banks")
         banks = cursor.fetchall()
 
-        print(f"\n📊 Banks from DB: {banks}\n")
-
-        if not banks:
-            print("❌ No banks found → EXIT")
-            return
+        print(f"📊 Banks: {banks}")
 
         for (bank,) in banks:
 
-            print(f"\n🏦 Processing Bank: {bank}")
+            print(f"\n🏦 {bank}")
 
             bank_folder = self.find_bank_folder(bank)
 
             if not bank_folder:
-                self.warn(f"Folder not found for bank: {bank}")
+                self.warn("Bank folder not found")
                 continue
 
-            base_path = os.path.join(bank_folder, "financial_report")
+            path = os.path.join(bank_folder, "financial_report")
 
-            print(f"📂 Financial path: {base_path}")
-
-            if not os.path.exists(base_path):
-                self.warn("financial_report folder missing")
+            if not os.path.exists(path):
+                self.warn("financial_report missing")
                 continue
 
-            files = os.listdir(base_path)
-            print(f"📄 Files: {files}")
+            files = os.listdir(path)
 
-            excel_files = [f for f in files if f.lower().endswith((".xlsx", ".xls"))]
+            excel_files = [
+                f for f in files
+                if f.lower().endswith((".xlsx", ".xls")) and not f.startswith("~$")
+            ]
 
-            if not excel_files:
-                self.warn("No Excel files found")
-                continue
+            print(f"📄 Files: {excel_files}")
 
             for file in excel_files:
 
-                file_path = os.path.join(base_path, file)
+                file_path = os.path.join(path, file)
 
                 results = self.process_excel(file_path)
 
-                if not results:
-                    self.warn("No data extracted from file")
-                    continue
-
                 for year, metrics in results.items():
 
-                    print(f"💾 Saving: {bank} | {year} | {metrics}")
+                    print(f"💾 Saving → {bank} | {year} | {metrics}")
 
                     cursor.execute("""
                     INSERT OR REPLACE INTO financial_metrics
@@ -229,10 +255,9 @@ class FinancialExtractor:
         conn.commit()
         conn.close()
 
-        print("\n✅ FINANCIAL EXTRACTION COMPLETED\n")
+        print("\n✅ DONE\n")
 
 
 # -------------------------------
 def main():
-    extractor = FinancialExtractor()
-    extractor.run()
+    FinancialExtractor().run()
