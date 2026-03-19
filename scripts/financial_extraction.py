@@ -9,13 +9,13 @@ sys.path.insert(0, "/content/drive/MyDrive/THINK_MVP")
 DB_PATH = "/content/drive/MyDrive/THINK_MVP/04_Analysis_Output/transformation_cache.db"
 BASE_PATH = "/content/drive/MyDrive/THINK_MVP/01_Corporate_Documents"
 
-print("🔥 FINAL FINANCIAL EXTRACTOR (SAFE PRODUCTION) LOADED 🔥")
+print("🔥 FINAL FINANCIAL EXTRACTOR (CLEAN LOGIC) LOADED 🔥")
 
 
 class FinancialExtractor:
 
     def __init__(self):
-        print("\n🚀 Financial Metrics Extractor (SAFE VERSION)\n")
+        print("\n🚀 Financial Metrics Extractor (FINAL CLEAN VERSION)\n")
 
     def log(self, msg):
         print(f"[LOG] {msg}")
@@ -59,11 +59,26 @@ class FinancialExtractor:
         year = int(year_match.group(1))
         self.log(f"{sheet_name}: Year → {year}")
 
+        # ✅ CLEAN KEYWORD MAPPING (NO OVERLAP)
         keyword_map = {
-            "revenue": ["interest income", "total operating income", "net interest income"],
-            "net_profit": ["net profit", "profit for the year", "profit attributable"],
-            "operating_income": ["operating income", "profit before tax"],
-            "total_assets": ["total assets"]
+            "revenue": [
+                "total operating income",
+                "total income",
+                "interest income",
+                "net interest income"
+            ],
+            "net_profit": [
+                "net profit",
+                "profit for the year",
+                "profit attributable"
+            ],
+            "operating_income": [
+                "profit before tax",
+                "profit before income tax"
+            ],
+            "total_assets": [
+                "total assets"
+            ]
         }
 
         temp_store = {k: [] for k in keyword_map.keys()}
@@ -101,11 +116,6 @@ class FinancialExtractor:
                 final[metric] = best_value
                 self.log(f"{sheet_name}: FINAL {metric} → {best_value}")
 
-        # Prevent duplication
-        if "revenue" in final and "operating_income" in final:
-            if final["revenue"] == final["operating_income"]:
-                del final["operating_income"]
-
         if final:
             return {year: final}
 
@@ -133,7 +143,6 @@ class FinancialExtractor:
         except Exception as e:
             self.warn(f"File error: {e}")
 
-        # ❗ NO FAKE FALLBACK
         if not all_results:
             self.warn("No valid financial data extracted (skipped)")
 
