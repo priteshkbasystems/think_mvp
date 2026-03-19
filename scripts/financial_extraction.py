@@ -9,13 +9,13 @@ sys.path.insert(0, "/content/drive/MyDrive/THINK_MVP")
 DB_PATH = "/content/drive/MyDrive/THINK_MVP/04_Analysis_Output/transformation_cache.db"
 BASE_PATH = "/content/drive/MyDrive/THINK_MVP/01_Corporate_Documents"
 
-print("🔥 FINAL FINANCIAL EXTRACTOR (ABSOLUTE FINAL) LOADED 🔥")
+print("🔥 FINAL FINANCIAL EXTRACTOR (SAFE PRODUCTION) LOADED 🔥")
 
 
 class FinancialExtractor:
 
     def __init__(self):
-        print("\n🚀 Financial Metrics Extractor (ABSOLUTE FINAL VERSION)\n")
+        print("\n🚀 Financial Metrics Extractor (SAFE VERSION)\n")
 
     def log(self, msg):
         print(f"[LOG] {msg}")
@@ -101,7 +101,7 @@ class FinancialExtractor:
                 final[metric] = best_value
                 self.log(f"{sheet_name}: FINAL {metric} → {best_value}")
 
-        # 🚨 FIX: remove duplicate values
+        # Prevent duplication
         if "revenue" in final and "operating_income" in final:
             if final["revenue"] == final["operating_income"]:
                 del final["operating_income"]
@@ -133,35 +133,9 @@ class FinancialExtractor:
         except Exception as e:
             self.warn(f"File error: {e}")
 
-        # 🔥 FINAL FALLBACK (Bangkok FIX)
+        # ❗ NO FAKE FALLBACK
         if not all_results:
-
-            self.log("Fallback triggered (global scan)")
-
-            try:
-                df = pd.concat(pd.read_excel(file_path, sheet_name=None).values())
-                text = " ".join(df.astype(str).values.flatten()).lower()
-
-                year_match = re.search(r"(20\d{2})", text)
-
-                if year_match:
-                    year = int(year_match.group(1))
-
-                    numbers = re.findall(r"[\d,]{6,}", text)
-
-                    numbers = [self.clean_value(n) for n in numbers if self.clean_value(n)]
-
-                    if numbers:
-                        max_val = max(numbers)
-
-                        all_results[year] = {
-                            "total_assets": max_val
-                        }
-
-                        self.log(f"Fallback total_assets → {max_val}")
-
-            except:
-                pass
+            self.warn("No valid financial data extracted (skipped)")
 
         self.log(f"📊 Extracted → {all_results}")
         return all_results
