@@ -9,13 +9,13 @@ sys.path.insert(0, "/content/drive/MyDrive/THINK_MVP")
 DB_PATH = "/content/drive/MyDrive/THINK_MVP/04_Analysis_Output/transformation_cache.db"
 BASE_PATH = "/content/drive/MyDrive/THINK_MVP/01_Corporate_Documents"
 
-print("🔥 FINAL FINANCIAL EXTRACTOR (ULTIMATE VERSION) LOADED 🔥")
+print("🔥 FINAL FINANCIAL EXTRACTOR (ROW-AWARE VERSION) LOADED 🔥")
 
 
 class FinancialExtractor:
 
     def __init__(self):
-        print("\n🚀 Financial Metrics Extractor (ULTIMATE VERSION)\n")
+        print("\n🚀 Financial Metrics Extractor (FINAL FIX VERSION)\n")
 
     def log(self, msg):
         print(f"[LOG] {msg}")
@@ -49,51 +49,66 @@ class FinancialExtractor:
 
         sheet_lower = sheet_name.lower()
 
-        # Skip irrelevant sheets
         if any(x in sheet_lower for x in ["change", "equity", "cash"]):
             self.log(f"{sheet_name}: Skipped")
             return results
 
-        full_text = " ".join(df.astype(str).values.flatten()).lower()
-
         # Detect year
+        full_text = " ".join(df.astype(str).values.flatten()).lower()
         year_match = re.search(r"(20\d{2})", full_text)
+
         if not year_match:
-            self.warn(f"{sheet_name}: No year found")
             return results
 
         year = int(year_match.group(1))
         self.log(f"{sheet_name}: Year → {year}")
 
-        # 🔥 ULTRA ROBUST PATTERNS
-        patterns = {
-            "revenue": r"(total operating income|total income|interest income|net interest income|operating income)[^0-9]{0,60}([\d,\.]+)",
-
-            "net_profit": r"(net profit|net income|profit for the year|profit attributable to owners)[^0-9]{0,60}([\d,\.]+)",
-
-            "operating_income": r"(operating income|operating profit|profit before tax|profit before income tax)[^0-9]{0,60}([\d,\.]+)",
-
-            "total_assets": r"(total assets)[^0-9]{0,60}([\d,\.]+)",
-
-            "roe": r"(return on equity|roe)[^0-9]{0,60}([\d\.]+)"
+        # 🔥 KEYWORD MAP
+        keyword_map = {
+            "revenue": ["interest income", "total operating income", "net interest income"],
+            "net_profit": ["net profit", "profit for the year", "profit attributable"],
+            "operating_income": ["operating income", "profit before tax"],
+            "total_assets": ["total assets"]
         }
 
-        for metric, pattern in patterns.items():
+        # 🔥 ROW-BASED EXTRACTION
+        for i, row in df.iterrows():
 
-            # Only extract revenue from income-type sheets
-            if metric == "revenue" and not any(x in sheet_lower for x in ["income", "pl", "comprehensive"]):
-                continue
+            row_text = " ".join([str(x).lower() for x in row.values])
 
-            match = re.search(pattern, full_text)
+            for metric, keywords in keyword_map.items():
 
-            if match:
-                value = self.clean_value(match.group(2))
+                # Only allow revenue in income sheets
+                if metric == "revenue" and not any(x in sheet_lower for x in ["income", "pl", "comprehensive"]):
+                    continue
 
-                # Remove noise
-                if value is not None and value > 1000:
-                    results.setdefault(year, {})
-                    results[year][metric] = value
-                    self.log(f"{sheet_name}: {metric} → {value}")
+                if any(k in row_text for k in keywords):
+
+                    # search value in same row
+                    for val in row.values:
+                        value = self.clean_value(val)
+
+                        if value and value > 1000:
+                            results.setdefault(year, {})
+                            results[year][metric] = value
+
+                            self.log(f"{sheet_name}: {metric} → {value}")
+                            break
+
+                    # 🔥 ALSO CHECK NEXT ROW (VERY IMPORTANT)
+                    if metric not in results.get(year, {}) and i + 1 < len(df):
+
+                        next_row = df.iloc[i + 1]
+
+                        for val in next_row.values:
+                            value = self.clean_value(val)
+
+                            if value and value > 1000:
+                                results.setdefault(year, {})
+                                results[year][metric] = value
+
+                                self.log(f"{sheet_name}: {metric} (next row) → {value}")
+                                break
 
         return results
 
@@ -107,7 +122,6 @@ class FinancialExtractor:
             xls = pd.ExcelFile(file_path)
 
             for sheet in xls.sheet_names:
-
                 df = xls.parse(sheet)
 
                 extracted = self.extract_from_df(df, sheet)
