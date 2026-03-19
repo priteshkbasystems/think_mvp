@@ -47,7 +47,7 @@ class FinancialExtractor:
 
         sheet_lower = sheet_name.lower()
 
-        if any(x in sheet_lower for x in ["change", "equity", "cash"]):
+        if any(x in sheet_lower for x in ["change", "equity", "cash", "cf"]):
             return {}
 
         full_text = " ".join(df.astype(str).values.flatten()).lower()
