@@ -9,13 +9,13 @@ sys.path.insert(0, "/content/drive/MyDrive/THINK_MVP")
 DB_PATH = "/content/drive/MyDrive/THINK_MVP/04_Analysis_Output/transformation_cache.db"
 BASE_PATH = "/content/drive/MyDrive/THINK_MVP/01_Corporate_Documents"
 
-print("🔥 FINAL FINANCIAL EXTRACTOR (TRUE FINAL VERSION) LOADED 🔥")
+print("🔥 FINAL FINANCIAL EXTRACTOR (ABSOLUTE FINAL FIXED) LOADED 🔥")
 
 
 class FinancialExtractor:
 
     def __init__(self):
-        print("\n🚀 Financial Metrics Extractor (TRUE FINAL VERSION)\n")
+        print("\n🚀 Financial Metrics Extractor (ABSOLUTE FINAL)\n")
 
     def log(self, msg):
         print(f"[LOG] {msg}")
@@ -40,12 +40,11 @@ class FinancialExtractor:
             return None
 
     # -------------------------------
-    # 🔥 Bangkok Enhanced Extraction
+    # 🔥 ULTRA STRONG BANGKOK EXTRACTION
     # -------------------------------
     def extract_bangkok(self, df):
 
         results = {}
-
         text = " ".join(df.astype(str).values.flatten()).lower()
 
         year_match = re.search(r"(20\d{2})", text)
@@ -54,7 +53,11 @@ class FinancialExtractor:
 
         year = int(year_match.group(1))
 
-        # STEP 1: regex
+        results[year] = {}
+
+        # -------------------------------
+        # STEP 1: REGEX
+        # -------------------------------
         patterns = {
             "revenue": r"(net interest income|total operating income)[^0-9]{0,50}([\d,]+)",
             "net_profit": r"(profit attributable|net profit)[^0-9]{0,50}([\d,]+)",
@@ -66,11 +69,12 @@ class FinancialExtractor:
             if match:
                 value = self.clean_value(match.group(2))
                 if value and value > 1000:
-                    results.setdefault(year, {})
                     results[year][metric] = value
                     self.log(f"Bangkok regex {metric} → {value}")
 
-        # STEP 2: row fallback (if missing)
+        # -------------------------------
+        # STEP 2: ROW SCAN
+        # -------------------------------
         keyword_map = {
             "net_profit": ["profit attributable", "net profit"],
             "total_assets": ["total assets"]
@@ -82,7 +86,7 @@ class FinancialExtractor:
 
             for metric, keywords in keyword_map.items():
 
-                if metric in results.get(year, {}):
+                if metric in results[year]:
                     continue
 
                 if any(k in row_text for k in keywords):
@@ -90,10 +94,26 @@ class FinancialExtractor:
                     for val in row.values:
                         value = self.clean_value(val)
                         if value and value > 1000:
-                            results.setdefault(year, {})
                             results[year][metric] = value
                             self.log(f"Bangkok row {metric} → {value}")
                             break
+
+        # -------------------------------
+        # STEP 3: GLOBAL FALLBACK (NEW 🔥)
+        # -------------------------------
+        if "total_assets" not in results[year]:
+
+            all_numbers = []
+
+            for val in df.values.flatten():
+                value = self.clean_value(val)
+                if value and value > 1_000_000:
+                    all_numbers.append(value)
+
+            if all_numbers:
+                max_val = max(all_numbers)
+                results[year]["total_assets"] = max_val
+                self.log(f"Bangkok fallback total_assets → {max_val}")
 
         return results
 
@@ -167,16 +187,13 @@ class FinancialExtractor:
 
         for metric, values in temp_store.items():
             if values:
-                best_value = max(values)
-                final[metric] = best_value
-                self.log(f"{sheet_name}: FINAL {metric} → {best_value}")
+                final[metric] = max(values)
+                self.log(f"{sheet_name}: FINAL {metric} → {final[metric]}")
 
         return {year: final} if final else {}
 
     # -------------------------------
     def process_excel(self, file_path):
-
-        all_results = {}
 
         self.log(f"\n📄 Processing: {file_path}")
 
@@ -184,6 +201,8 @@ class FinancialExtractor:
             if "bangkok" in file_path.lower():
                 df = pd.concat(pd.read_excel(file_path, sheet_name=None).values())
                 return self.extract_bangkok(df)
+
+            all_results = {}
 
             xls = pd.ExcelFile(file_path)
 
@@ -196,14 +215,11 @@ class FinancialExtractor:
                     all_results.setdefault(year, {})
                     all_results[year].update(metrics)
 
+            return all_results
+
         except Exception as e:
             self.warn(f"File error: {e}")
-
-        if not all_results:
-            self.warn("No valid financial data extracted (skipped)")
-
-        self.log(f"📊 Extracted → {all_results}")
-        return all_results
+            return {}
 
     # -------------------------------
     def run(self):
