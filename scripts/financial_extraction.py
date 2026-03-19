@@ -9,13 +9,13 @@ sys.path.insert(0, "/content/drive/MyDrive/THINK_MVP")
 DB_PATH = "/content/drive/MyDrive/THINK_MVP/04_Analysis_Output/transformation_cache.db"
 BASE_PATH = "/content/drive/MyDrive/THINK_MVP/01_Corporate_Documents"
 
-print("🔥 FINAL FINANCIAL EXTRACTOR (WITH BANGKOK SUPPORT) LOADED 🔥")
+print("🔥 FINAL FINANCIAL EXTRACTOR (ULTIMATE PRODUCTION) LOADED 🔥")
 
 
 class FinancialExtractor:
 
     def __init__(self):
-        print("\n🚀 Financial Metrics Extractor (FINAL VERSION)\n")
+        print("\n🚀 Financial Metrics Extractor (ULTIMATE VERSION)\n")
 
     def log(self, msg):
         print(f"[LOG] {msg}")
@@ -40,7 +40,7 @@ class FinancialExtractor:
             return None
 
     # -------------------------------
-    # 🔥 Bangkok Specific Extraction
+    # 🔥 Bangkok Specific Extraction (FINAL)
     # -------------------------------
     def extract_bangkok(self, df):
 
@@ -55,19 +55,32 @@ class FinancialExtractor:
         year = int(year_match.group(1))
 
         patterns = {
-            "revenue": r"(net interest income)[^0-9]{0,50}([\d,]+)",
-            "net_profit": r"(profit attributable)[^0-9]{0,50}([\d,]+)",
-            "total_assets": r"(total assets)[^0-9]{0,50}([\d,]+)"
+            "revenue": [
+                r"(net interest income)[^0-9]{0,50}([\d,]+)",
+                r"(total operating income)[^0-9]{0,50}([\d,]+)"
+            ],
+            "net_profit": [
+                r"(profit attributable)[^0-9]{0,50}([\d,]+)",
+                r"(net profit)[^0-9]{0,50}([\d,]+)"
+            ],
+            "total_assets": [
+                r"(total assets)[^0-9]{0,50}([\d,]+)"
+            ]
         }
 
-        for metric, pattern in patterns.items():
-            match = re.search(pattern, text)
-            if match:
-                value = self.clean_value(match.group(2))
-                if value and value > 1000:
-                    results.setdefault(year, {})
-                    results[year][metric] = value
-                    self.log(f"Bangkok: {metric} → {value}")
+        for metric, pattern_list in patterns.items():
+            for pattern in pattern_list:
+
+                match = re.search(pattern, text)
+
+                if match:
+                    value = self.clean_value(match.group(2))
+
+                    if value and value > 1000:
+                        results.setdefault(year, {})
+                        results[year][metric] = value
+                        self.log(f"Bangkok: {metric} → {value}")
+                        break
 
         return results
 
@@ -148,10 +161,7 @@ class FinancialExtractor:
                 final[metric] = best_value
                 self.log(f"{sheet_name}: FINAL {metric} → {best_value}")
 
-        if final:
-            return {year: final}
-
-        return {}
+        return {year: final} if final else {}
 
     # -------------------------------
     def process_excel(self, file_path):
