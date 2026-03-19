@@ -9,13 +9,13 @@ sys.path.insert(0, "/content/drive/MyDrive/THINK_MVP")
 DB_PATH = "/content/drive/MyDrive/THINK_MVP/04_Analysis_Output/transformation_cache.db"
 BASE_PATH = "/content/drive/MyDrive/THINK_MVP/01_Corporate_Documents"
 
-print("🔥 FINAL FINANCIAL EXTRACTOR (CLEAN LOGIC) LOADED 🔥")
+print("🔥 FINAL FINANCIAL EXTRACTOR (WITH BANGKOK SUPPORT) LOADED 🔥")
 
 
 class FinancialExtractor:
 
     def __init__(self):
-        print("\n🚀 Financial Metrics Extractor (FINAL CLEAN VERSION)\n")
+        print("\n🚀 Financial Metrics Extractor (FINAL VERSION)\n")
 
     def log(self, msg):
         print(f"[LOG] {msg}")
@@ -40,6 +40,38 @@ class FinancialExtractor:
             return None
 
     # -------------------------------
+    # 🔥 Bangkok Specific Extraction
+    # -------------------------------
+    def extract_bangkok(self, df):
+
+        results = {}
+
+        text = " ".join(df.astype(str).values.flatten()).lower()
+
+        year_match = re.search(r"(20\d{2})", text)
+        if not year_match:
+            return {}
+
+        year = int(year_match.group(1))
+
+        patterns = {
+            "revenue": r"(net interest income)[^0-9]{0,50}([\d,]+)",
+            "net_profit": r"(profit attributable)[^0-9]{0,50}([\d,]+)",
+            "total_assets": r"(total assets)[^0-9]{0,50}([\d,]+)"
+        }
+
+        for metric, pattern in patterns.items():
+            match = re.search(pattern, text)
+            if match:
+                value = self.clean_value(match.group(2))
+                if value and value > 1000:
+                    results.setdefault(year, {})
+                    results[year][metric] = value
+                    self.log(f"Bangkok: {metric} → {value}")
+
+        return results
+
+    # -------------------------------
     def extract_from_df(self, df, sheet_name):
 
         if df.empty:
@@ -47,6 +79,7 @@ class FinancialExtractor:
 
         sheet_lower = sheet_name.lower()
 
+        # Skip irrelevant sheets
         if any(x in sheet_lower for x in ["change", "equity", "cash", "cf"]):
             return {}
 
@@ -59,7 +92,6 @@ class FinancialExtractor:
         year = int(year_match.group(1))
         self.log(f"{sheet_name}: Year → {year}")
 
-        # ✅ CLEAN KEYWORD MAPPING (NO OVERLAP)
         keyword_map = {
             "revenue": [
                 "total operating income",
@@ -129,6 +161,11 @@ class FinancialExtractor:
         self.log(f"\n📄 Processing: {file_path}")
 
         try:
+            # 🔥 Bangkok special handling
+            if "bangkok" in file_path.lower():
+                df = pd.concat(pd.read_excel(file_path, sheet_name=None).values())
+                return self.extract_bangkok(df)
+
             xls = pd.ExcelFile(file_path)
 
             for sheet in xls.sheet_names:
