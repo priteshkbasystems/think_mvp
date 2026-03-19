@@ -52,6 +52,17 @@ def init_db():
     )
     """)
 
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS financial_statement_sheets (
+        bank_name TEXT,
+        year INTEGER,
+        file_path TEXT,
+        sheet_name TEXT,
+        payload_json TEXT,
+        PRIMARY KEY(bank_name, year, file_path, sheet_name)
+    )
+    """)
+
     # ------------------------------
     # REVIEW SENTIMENT
     # ------------------------------
@@ -248,6 +259,17 @@ def init_db():
         year INTEGER,
         last_processed_index INTEGER,
         PRIMARY KEY(step_name, bank_name, year)
+    )
+    """)
+    # -----------------------------------------
+    # CORPORATE SENTIMENT
+    # -----------------------------------------
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS corporate_sentiment (
+        bank_name TEXT,
+        year INTEGER,
+        sentiment REAL,
+        PRIMARY KEY (bank_name, year)
     )
     """)
     # ==========================================
