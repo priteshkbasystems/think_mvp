@@ -5,7 +5,7 @@ import pandas as pd
 
 DB_PATH = "/content/drive/MyDrive/THINK_MVP/04_Analysis_Output/transformation_cache.db"
 
-
+print("🔥 UPDATED FINANCIAL EXTRACTOR FILE LOADED 🔥")
 class FinancialExtractor:
 
     def __init__(self):
