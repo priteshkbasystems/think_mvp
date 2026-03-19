@@ -4,12 +4,15 @@ import sqlite3
 import pandas as pd
 
 DB_PATH = "/content/drive/MyDrive/THINK_MVP/04_Analysis_Output/transformation_cache.db"
+BASE_PATH = "/content/drive/MyDrive/THINK_MVP/01_Corporate_Documents"
 
-print("🔥 UPDATED FINANCIAL EXTRACTOR FILE LOADED 🔥")
+print("🔥 FINAL FINANCIAL EXTRACTOR LOADED 🔥")
+
+
 class FinancialExtractor:
 
     def __init__(self):
-        print("\n🚀 Loading Financial Metrics Extractor (Excel Based)\n")
+        print("\n🚀 Financial Metrics Extractor (Excel - DEBUG MODE)\n")
 
         self.metric_keywords = {
             "revenue": ["revenue", "total revenue", "income"],
@@ -20,17 +23,35 @@ class FinancialExtractor:
         }
 
     # -------------------------------
-    def log(self, message):
-        print(f"[LOG] {message}")
+    def log(self, msg):
+        print(f"[LOG] {msg}")
 
-    def warn(self, message):
-        print(f"[WARNING] {message}")
+    def warn(self, msg):
+        print(f"[WARNING] {msg}")
+
+    # -------------------------------
+    def normalize_name(self, name):
+        return name.lower().replace(" ", "").replace("_", "")
+
+    # -------------------------------
+    def find_bank_folder(self, bank_name):
+
+        if not os.path.exists(BASE_PATH):
+            self.warn("Base path not found!")
+            return None
+
+        folders = os.listdir(BASE_PATH)
+
+        for folder in folders:
+            if self.normalize_name(folder) == self.normalize_name(bank_name):
+                return os.path.join(BASE_PATH, folder)
+
+        return None
 
     # -------------------------------
     def clean_value(self, value):
         if pd.isna(value):
             return None
-
         try:
             value = str(value).replace(",", "").replace("%", "").strip()
             return float(value)
@@ -73,7 +94,7 @@ class FinancialExtractor:
             self.warn(f"{sheet_name}: No year columns detected")
             return results
 
-        self.log(f"{sheet_name}: Detected years → {[y for _, y in year_cols]}")
+        self.log(f"{sheet_name}: Years → {[y for _, y in year_cols]}")
 
         for _, row in df.iterrows():
 
@@ -106,8 +127,7 @@ class FinancialExtractor:
 
         try:
             xls = pd.ExcelFile(file_path)
-
-            self.log(f"Sheets found: {xls.sheet_names}")
+            self.log(f"Sheets: {xls.sheet_names}")
 
             for sheet in xls.sheet_names:
                 try:
@@ -115,7 +135,7 @@ class FinancialExtractor:
                     extracted = self.extract_from_df(df, sheet)
 
                     if not extracted:
-                        self.warn(f"{sheet}: No financial data extracted")
+                        self.warn(f"{sheet}: No data extracted")
 
                     for year, metrics in extracted.items():
                         if year not in all_results:
@@ -124,19 +144,19 @@ class FinancialExtractor:
                         all_results[year].update(metrics)
 
                 except Exception as e:
-                    self.warn(f"Sheet error ({sheet}): {e}")
+                    self.warn(f"{sheet} error: {e}")
 
         except Exception as e:
             self.warn(f"File error: {file_path} → {e}")
 
-        self.log(f"📊 Final extracted data: {all_results}\n")
+        self.log(f"📊 Extracted: {all_results}\n")
 
         return all_results
 
     # -------------------------------
     def run(self):
 
-        self.log("Connecting to database...")
+        print("\n🚀 STARTING FINANCIAL EXTRACTION DEBUG\n")
 
         conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
@@ -144,35 +164,52 @@ class FinancialExtractor:
         cursor.execute("SELECT bank_name FROM banks")
         banks = cursor.fetchall()
 
+        print(f"\n📊 Banks from DB: {banks}\n")
+
+        if not banks:
+            print("❌ No banks found → EXIT")
+            return
+
         for (bank,) in banks:
 
-            self.log(f"\n🏦 Processing Bank: {bank}")
+            print(f"\n🏦 Processing Bank: {bank}")
 
-            base_path = f"/content/drive/MyDrive/THINK_MVP/01_Corporate_Documents/{bank}/financial_report"
+            bank_folder = self.find_bank_folder(bank)
+
+            if not bank_folder:
+                self.warn(f"Folder not found for bank: {bank}")
+                continue
+
+            base_path = os.path.join(bank_folder, "financial_report")
+
+            print(f"📂 Financial path: {base_path}")
 
             if not os.path.exists(base_path):
-                self.warn(f"{bank}: financial_report folder not found")
+                self.warn("financial_report folder missing")
                 continue
 
-            files = [f for f in os.listdir(base_path) if f.endswith((".xlsx", ".xls"))]
+            files = os.listdir(base_path)
+            print(f"📄 Files: {files}")
 
-            if not files:
-                self.warn(f"{bank}: No Excel files found")
+            excel_files = [f for f in files if f.endswith((".xlsx", ".xls"))]
+
+            if not excel_files:
+                self.warn("No Excel files found")
                 continue
 
-            for file in files:
+            for file in excel_files:
 
                 file_path = os.path.join(base_path, file)
 
                 results = self.process_excel(file_path)
 
                 if not results:
-                    self.warn(f"{bank}: No metrics extracted from {file}")
+                    self.warn("No data extracted from file")
                     continue
 
                 for year, metrics in results.items():
 
-                    self.log(f"💾 Saving → {bank} | {year} | {metrics}")
+                    print(f"💾 Saving: {bank} | {year} | {metrics}")
 
                     cursor.execute("""
                     INSERT OR REPLACE INTO financial_metrics
@@ -191,11 +228,9 @@ class FinancialExtractor:
         conn.commit()
         conn.close()
 
-        self.log("\n✅ Financial metrics extraction completed.\n")
+        print("\n✅ FINANCIAL EXTRACTION COMPLETED\n")
 
 
-# -------------------------------
-# ENTRY POINT (IMPORTANT)
 # -------------------------------
 def main():
     extractor = FinancialExtractor()
