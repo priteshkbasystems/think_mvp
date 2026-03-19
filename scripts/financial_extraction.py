@@ -1,6 +1,7 @@
+import os
 import re
 import sqlite3
-from scripts.transformation_correlation import extract_text_from_pdf
+import pandas as pd
 
 DB_PATH = "/content/drive/MyDrive/THINK_MVP/04_Analysis_Output/transformation_cache.db"
 
@@ -8,73 +9,167 @@ DB_PATH = "/content/drive/MyDrive/THINK_MVP/04_Analysis_Output/transformation_ca
 class FinancialExtractor:
 
     def __init__(self):
+        print("Loading Financial Metrics Extractor (Excel Based)")
 
-        print("Loading Financial Metrics Extractor")
-
-    def extract_metrics(self, text):
-
-        metrics = {}
-
-        patterns = {
-            "revenue": r"revenue[^0-9]{0,10}([\d,]+)",
-            "net_profit": r"net profit[^0-9]{0,10}([\d,]+)",
-            "operating_income": r"operating income[^0-9]{0,10}([\d,]+)",
-            "total_assets": r"total assets[^0-9]{0,10}([\d,]+)",
-            "roe": r"return on equity[^0-9]{0,10}([\d\.]+)"
+        # Flexible keyword mapping (VERY IMPORTANT)
+        self.metric_keywords = {
+            "revenue": ["revenue", "total revenue", "income"],
+            "net_profit": ["net profit", "net income", "profit after tax"],
+            "operating_income": ["operating income", "operating profit"],
+            "total_assets": ["total assets"],
+            "roe": ["roe", "return on equity"]
         }
 
-        text = text.lower()
+    # -------------------------------
+    # Utility: Clean numeric values
+    # -------------------------------
+    def clean_value(self, value):
+        if pd.isna(value):
+            return None
 
-        for key, pattern in patterns.items():
+        try:
+            value = str(value).replace(",", "").replace("%", "").strip()
+            return float(value)
+        except:
+            return None
 
-            match = re.search(pattern, text)
-
+    # -------------------------------
+    # Detect year columns
+    # -------------------------------
+    def extract_years(self, columns):
+        years = []
+        for col in columns:
+            match = re.search(r"(20\d{2})", str(col))
             if match:
+                years.append((col, int(match.group(1))))
+        return years
 
-                value = match.group(1).replace(",", "")
+    # -------------------------------
+    # Match row name with metric
+    # -------------------------------
+    def match_metric(self, row_name):
+        row_name = str(row_name).lower()
 
+        for metric, keywords in self.metric_keywords.items():
+            for keyword in keywords:
+                if keyword in row_name:
+                    return metric
+        return None
+
+    # -------------------------------
+    # Extract metrics from dataframe
+    # -------------------------------
+    def extract_from_df(self, df):
+        results = {}
+
+        if df.empty:
+            return results
+
+        # Assume first column contains labels
+        df = df.dropna(how="all")
+
+        first_col = df.columns[0]
+
+        year_cols = self.extract_years(df.columns)
+
+        if not year_cols:
+            return results
+
+        for _, row in df.iterrows():
+
+            metric = self.match_metric(row[first_col])
+
+            if not metric:
+                continue
+
+            for col, year in year_cols:
+
+                value = self.clean_value(row[col])
+
+                if value is None:
+                    continue
+
+                if year not in results:
+                    results[year] = {}
+
+                results[year][metric] = value
+
+        return results
+
+    # -------------------------------
+    # Process Excel file
+    # -------------------------------
+    def process_excel(self, file_path):
+        all_results = {}
+
+        try:
+            xls = pd.ExcelFile(file_path)
+
+            for sheet in xls.sheet_names:
                 try:
-                    metrics[key] = float(value)
-                except:
-                    pass
+                    df = xls.parse(sheet)
+                    extracted = self.extract_from_df(df)
 
-        return metrics
+                    for year, metrics in extracted.items():
+                        if year not in all_results:
+                            all_results[year] = {}
 
+                        all_results[year].update(metrics)
+
+                except Exception as e:
+                    print(f"Sheet error ({sheet}): {e}")
+
+        except Exception as e:
+            print(f"File error: {file_path} → {e}")
+
+        return all_results
+
+    # -------------------------------
+    # MAIN RUN
+    # -------------------------------
     def run(self):
 
         conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
 
-        cursor.execute("SELECT file_path, year FROM pdf_cache")
+        # Get all banks
+        cursor.execute("SELECT bank_name FROM banks")
+        banks = cursor.fetchall()
 
-        rows = cursor.fetchall()
+        for (bank,) in banks:
 
-        for path, year in rows:
+            base_path = f"/content/drive/MyDrive/THINK_MVP/01_Corporate_Documents/{bank}/financial_report"
 
-            bank = path.split("/")[-3]
-
-            text = extract_text_from_pdf(path)
-
-            metrics = self.extract_metrics(text)
-
-            if not metrics:
+            if not os.path.exists(base_path):
                 continue
 
-            cursor.execute("""
-            INSERT OR REPLACE INTO financial_metrics
-            (bank_name, year, revenue, net_profit, operating_income, total_assets, roe)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-            """, (
-                bank,
-                year,
-                metrics.get("revenue"),
-                metrics.get("net_profit"),
-                metrics.get("operating_income"),
-                metrics.get("total_assets"),
-                metrics.get("roe")
-            ))
+            files = [f for f in os.listdir(base_path) if f.endswith((".xlsx", ".xls"))]
+
+            for file in files:
+
+                file_path = os.path.join(base_path, file)
+
+                print(f"Processing: {file_path}")
+
+                results = self.process_excel(file_path)
+
+                for year, metrics in results.items():
+
+                    cursor.execute("""
+                    INSERT OR REPLACE INTO financial_metrics
+                    (bank_name, year, revenue, net_profit, operating_income, total_assets, roe)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """, (
+                        bank,
+                        year,
+                        metrics.get("revenue"),
+                        metrics.get("net_profit"),
+                        metrics.get("operating_income"),
+                        metrics.get("total_assets"),
+                        metrics.get("roe")
+                    ))
 
         conn.commit()
         conn.close()
 
-        print("Financial metrics extraction completed.")
+        print("✅ Financial metrics extraction from Excel completed.")

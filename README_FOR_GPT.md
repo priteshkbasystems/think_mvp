@@ -107,6 +107,8 @@ These scripts are helpers called by the pipeline steps above. They do not define
 - `scripts/success_factor_detection.py` / `scripts/success_factor_pipeline.py` – helpers and pipeline for detecting key success factors behind successful transformation outcomes (STEP 24).
 - `scripts/narrative_evolution_analysis.py` / `scripts/narrative_evolution_pipeline.py` – utilities and pipeline to compute how corporate transformation narratives evolve over time (STEP 25).
 - `scripts/corporate_sentiment_analyzer.py` / `scripts/corporate_sentiment_pipeline.py` – helpers and pipeline for running the corporate‑level sentiment model (STEP 23).
+- `scripts/topic_mapping_engine.py` – maps unmapped reviews in `review_sentiments` to complaint `topic_id` values using SentenceTransformer embeddings and cosine similarity, then updates rows in bulk.
+- `scripts/progress_tracker.py` – checkpoint utility over `step_progress` table (`get_progress` / `save_progress`) so long-running steps can resume from the last processed index.
 
 ## Overview
 
