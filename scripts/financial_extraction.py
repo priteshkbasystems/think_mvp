@@ -9,13 +9,13 @@ sys.path.insert(0, "/content/drive/MyDrive/THINK_MVP")
 DB_PATH = "/content/drive/MyDrive/THINK_MVP/04_Analysis_Output/transformation_cache.db"
 BASE_PATH = "/content/drive/MyDrive/THINK_MVP/01_Corporate_Documents"
 
-print("🔥 FINAL FINANCIAL EXTRACTOR (ENTERPRISE VERSION) LOADED 🔥")
+print("🔥 FINAL FINANCIAL EXTRACTOR (ABSOLUTE FINAL) LOADED 🔥")
 
 
 class FinancialExtractor:
 
     def __init__(self):
-        print("\n🚀 Financial Metrics Extractor (FINAL ENTERPRISE VERSION)\n")
+        print("\n🚀 Financial Metrics Extractor (ABSOLUTE FINAL VERSION)\n")
 
     def log(self, msg):
         print(f"[LOG] {msg}")
@@ -93,9 +93,6 @@ class FinancialExtractor:
                             if value and value > 1000:
                                 temp_store[metric].append(value)
 
-        # -------------------------------
-        # PICK BEST VALUE (MAX)
-        # -------------------------------
         final = {}
 
         for metric, values in temp_store.items():
@@ -103,6 +100,11 @@ class FinancialExtractor:
                 best_value = max(values)
                 final[metric] = best_value
                 self.log(f"{sheet_name}: FINAL {metric} → {best_value}")
+
+        # 🚨 FIX: remove duplicate values
+        if "revenue" in final and "operating_income" in final:
+            if final["revenue"] == final["operating_income"]:
+                del final["operating_income"]
 
         if final:
             return {year: final}
@@ -131,11 +133,10 @@ class FinancialExtractor:
         except Exception as e:
             self.warn(f"File error: {e}")
 
-        # -------------------------------
-        # 🔥 FALLBACK (for Bangkok)
-        # -------------------------------
+        # 🔥 FINAL FALLBACK (Bangkok FIX)
         if not all_results:
-            self.log("Fallback extraction triggered")
+
+            self.log("Fallback triggered (global scan)")
 
             try:
                 df = pd.concat(pd.read_excel(file_path, sheet_name=None).values())
@@ -146,13 +147,18 @@ class FinancialExtractor:
                 if year_match:
                     year = int(year_match.group(1))
 
-                    profit_match = re.search(r"(profit attributable)[^0-9]{0,50}([\d,\.]+)", text)
+                    numbers = re.findall(r"[\d,]{6,}", text)
 
-                    if profit_match:
-                        value = self.clean_value(profit_match.group(2))
-                        if value:
-                            all_results[year] = {"net_profit": value}
-                            self.log(f"Fallback net_profit → {value}")
+                    numbers = [self.clean_value(n) for n in numbers if self.clean_value(n)]
+
+                    if numbers:
+                        max_val = max(numbers)
+
+                        all_results[year] = {
+                            "total_assets": max_val
+                        }
+
+                        self.log(f"Fallback total_assets → {max_val}")
 
             except:
                 pass
