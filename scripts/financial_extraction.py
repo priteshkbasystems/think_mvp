@@ -9,13 +9,18 @@ sys.path.insert(0, "/content/drive/MyDrive/THINK_MVP")
 DB_PATH = "/content/drive/MyDrive/THINK_MVP/04_Analysis_Output/transformation_cache.db"
 BASE_PATH = "/content/drive/MyDrive/THINK_MVP/01_Corporate_Documents"
 
-print("🔥 FINAL FINANCIAL EXTRACTOR (UNIVERSAL ENGINE v2) LOADED 🔥")
+print("🔥 FINAL FINANCIAL EXTRACTOR (ULTIMATE STABLE VERSION) LOADED 🔥")
+
+
+# 🔥 AUTO YEAR RANGE (last 5 years only)
+CURRENT_YEAR = 2026
+VALID_YEARS = [CURRENT_YEAR - i for i in range(5)]
 
 
 class FinancialExtractor:
 
     def __init__(self):
-        print("\n🚀 Financial Metrics Extractor (STRUCTURE-AWARE)\n")
+        print("\n🚀 Financial Metrics Extractor (FINAL STABLE)\n")
 
     def log(self, msg):
         print(f"[LOG] {msg}")
@@ -44,6 +49,7 @@ class FinancialExtractor:
 
             val = float(value)
 
+            # ignore years
             if 1900 < val < 2100:
                 return None
 
@@ -66,7 +72,7 @@ class FinancialExtractor:
             np = metrics.get("net_profit")
             eq = metrics.get("equity")
 
-            if np and eq and eq != 0:
+            if np and eq and eq > 0:
                 return round((np / eq) * 100, 2)
         except:
             pass
@@ -81,16 +87,16 @@ class FinancialExtractor:
             return {}
 
         df = df.fillna("")
-        df.columns = range(len(df.columns))  # normalize
+        df.columns = range(len(df.columns))
 
         sheet_lower = sheet_name.lower()
 
-        # skip only cashflow
+        # skip only cash flow sheets
         if any(x in sheet_lower for x in ["cash", "cf"]):
             return {}
 
         # -------------------------------
-        # DETECT YEAR COLUMNS
+        # DETECT YEAR COLUMNS (STRICT)
         # -------------------------------
         year_cols = {}
 
@@ -98,18 +104,20 @@ class FinancialExtractor:
             for val in df[col].astype(str):
                 match = re.search(r"(20\d{2})", val)
                 if match:
-                    year_cols[col] = int(match.group(1))
+                    year = int(match.group(1))
+
+                    if year in VALID_YEARS:
+                        year_cols[col] = year
 
         if not year_cols:
             return {}
 
-        results = {}
+        temp_results = {}
 
         keyword_map = {
             "revenue": [
                 "total operating income",
-                "total income",
-                "interest income"
+                "total income"
             ],
             "net_profit": [
                 "net profit",
@@ -147,12 +155,35 @@ class FinancialExtractor:
                         clean_val = self.clean_value(val)
 
                         if clean_val:
-                            results.setdefault(year, {})
-                            results[year][metric] = clean_val
+
+                            temp_results.setdefault(year, {})
+                            temp_results[year].setdefault(metric, [])
+                            temp_results[year][metric].append(clean_val)
 
                             self.log(f"{sheet_name}: {metric} → {clean_val} ({year})")
 
-        return results
+        # -------------------------------
+        # PICK BEST VALUES
+        # -------------------------------
+        final_results = {}
+
+        for year, metrics in temp_results.items():
+
+            final_results[year] = {}
+
+            for metric, values in metrics.items():
+
+                if not values:
+                    continue
+
+                if metric in ["revenue", "net_profit", "equity", "total_assets"]:
+                    final_val = max(values)
+                else:
+                    final_val = values[-1]
+
+                final_results[year][metric] = final_val
+
+        return final_results
 
     # -------------------------------
     def process_excel(self, file_path):
@@ -225,7 +256,7 @@ class FinancialExtractor:
 
                 for year, metrics in results.items():
 
-                    # 🔥 ROE
+                    # 🔥 CALCULATE ROE
                     metrics["roe"] = self.compute_roe(metrics)
 
                     print(f"💾 Saving → {bank} | {year} | {metrics}")
