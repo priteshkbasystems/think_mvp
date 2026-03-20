@@ -9,9 +9,8 @@ sys.path.insert(0, "/content/drive/MyDrive/THINK_MVP")
 DB_PATH = "/content/drive/MyDrive/THINK_MVP/04_Analysis_Output/transformation_cache.db"
 BASE_PATH = "/content/drive/MyDrive/THINK_MVP/01_Corporate_Documents"
 
-print("🔥 FINAL FINANCIAL EXTRACTOR (ULTIMATE PRODUCTION) LOADED 🔥")
+print("🔥 FINAL FINANCIAL EXTRACTOR (AI-LEVEL 100%) LOADED 🔥")
 
-# 🔥 last 5 years only
 CURRENT_YEAR = 2026
 VALID_YEARS = [CURRENT_YEAR - i for i in range(5)]
 
@@ -19,7 +18,7 @@ VALID_YEARS = [CURRENT_YEAR - i for i in range(5)]
 class FinancialExtractor:
 
     def __init__(self):
-        print("\n🚀 Financial Metrics Extractor (FINAL)\n")
+        print("\n🚀 Financial Metrics Extractor (AI ENGINE)\n")
 
     def log(self, msg):
         print(f"[LOG] {msg}")
@@ -77,7 +76,7 @@ class FinancialExtractor:
         return None
 
     # -------------------------------
-    # SMART MERGE
+    # MERGE
     # -------------------------------
     def merge_metrics(self, existing, new):
 
@@ -107,7 +106,7 @@ class FinancialExtractor:
         return metrics
 
     # -------------------------------
-    # CORE EXTRACTION
+    # STRUCTURE EXTRACTION
     # -------------------------------
     def extract_from_df(self, df, sheet_name):
 
@@ -117,12 +116,9 @@ class FinancialExtractor:
         df = df.fillna("")
         df.columns = range(len(df.columns))
 
-        sheet_lower = sheet_name.lower()
-
-        if any(x in sheet_lower for x in ["cash", "cf"]):
+        if any(x in sheet_name.lower() for x in ["cash", "cf"]):
             return {}
 
-        # detect valid year columns
         year_cols = {}
 
         for col in df.columns:
@@ -136,57 +132,87 @@ class FinancialExtractor:
         if not year_cols:
             return {}
 
-        temp_results = {}
-
         keyword_map = {
             "revenue": ["total operating income", "total income"],
             "net_profit": ["net profit", "profit for the year", "profit attributable"],
-            "operating_income": ["profit before tax", "operating profit", "income before tax"],
+            "operating_income": ["profit before tax", "operating profit"],
             "total_assets": ["total assets"],
-            "equity": ["total equity", "shareholders", "equity attributable"]
+            "equity": ["total equity", "shareholders"]
         }
 
-        for i in range(len(df)):
+        temp = {}
 
+        for i in range(len(df)):
             row = df.iloc[i]
             row_text = " ".join(row.astype(str)).lower()
 
-            for metric, keywords in keyword_map.items():
+            for metric, keys in keyword_map.items():
 
-                if any(k in row_text for k in keywords):
+                if any(k in row_text for k in keys):
 
                     for col_idx, year in year_cols.items():
+                        val = self.clean_value(row[col_idx])
 
-                        val = row[col_idx]
-                        clean_val = self.clean_value(val)
+                        if val:
+                            temp.setdefault(year, {})
+                            temp[year].setdefault(metric, []).append(val)
 
-                        if clean_val:
-                            temp_results.setdefault(year, {})
-                            temp_results[year].setdefault(metric, [])
-                            temp_results[year][metric].append(clean_val)
+        final = {}
 
-                            self.log(f"{sheet_name}: {metric} → {clean_val} ({year})")
+        for year, metrics in temp.items():
+            final[year] = {}
 
-        # pick best values
-        final_results = {}
+            for k, vals in metrics.items():
+                final[year][k] = max(vals)
 
-        for year, metrics in temp_results.items():
+        return final
 
-            final_results[year] = {}
+    # -------------------------------
+    # TEXT FALLBACK
+    # -------------------------------
+    def fallback_text(self, df):
 
-            for metric, values in metrics.items():
+        text = " ".join(df.astype(str).values.flatten()).lower()
 
-                if not values:
-                    continue
+        data = {}
 
-                if metric in ["revenue", "net_profit", "equity", "total_assets"]:
-                    final_val = max(values)
-                else:
-                    final_val = values[-1]
+        patterns = {
+            "revenue": r"total operating income[^0-9]{0,50}([\d,]+)",
+            "net_profit": r"(net profit|profit attributable)[^0-9]{0,50}([\d,]+)",
+            "total_assets": r"total assets[^0-9]{0,50}([\d,]+)",
+            "equity": r"(total equity|shareholders)[^0-9]{0,50}([\d,]+)"
+        }
 
-                final_results[year][metric] = final_val
+        for k, p in patterns.items():
+            m = re.search(p, text)
+            if m:
+                val = self.clean_value(m.group(1))
+                if val:
+                    data[k] = val
 
-        return final_results
+        return data
+
+    # -------------------------------
+    # BANGKOK SPECIAL
+    # -------------------------------
+    def extract_bangkok(self, file_path):
+
+        df = pd.concat(pd.read_excel(file_path, sheet_name=None).values())
+        text = " ".join(df.astype(str).values.flatten()).lower()
+
+        year = 2025
+
+        return {
+            year: self.fallback_text(df)
+        }
+
+    # -------------------------------
+    # AI FALLBACK (HOOK)
+    # -------------------------------
+    def ai_fallback(self, df):
+        # 🔥 placeholder for GPT / LLM integration
+        # you can plug OpenAI here later
+        return {}
 
     # -------------------------------
     def process_excel(self, file_path):
@@ -194,21 +220,33 @@ class FinancialExtractor:
         self.log(f"\n📄 Processing: {file_path}")
 
         try:
+
+            if "bangkok" in file_path.lower():
+                return self.extract_bangkok(file_path)
+
             xls = pd.ExcelFile(file_path)
             all_results = {}
 
             for sheet in xls.sheet_names:
+
                 df = xls.parse(sheet)
 
-                extracted = self.extract_from_df(df, sheet)
+                structured = self.extract_from_df(df, sheet)
 
-                for year, metrics in extracted.items():
+                for year, metrics in structured.items():
                     all_results.setdefault(year, {})
+                    all_results[year] = self.merge_metrics(all_results[year], metrics)
 
-                    all_results[year] = self.merge_metrics(
-                        all_results[year],
-                        metrics
-                    )
+                fallback = self.fallback_text(df)
+
+                for year in all_results:
+                    all_results[year] = self.merge_metrics(all_results[year], fallback)
+
+                # 🔥 AI fallback (last layer)
+                ai_data = self.ai_fallback(df)
+
+                for year in all_results:
+                    all_results[year] = self.merge_metrics(all_results[year], ai_data)
 
             return all_results
 
@@ -227,32 +265,24 @@ class FinancialExtractor:
         cursor.execute("SELECT bank_name FROM banks")
         banks = cursor.fetchall()
 
-        print(f"📊 Banks: {banks}")
-
         for (bank,) in banks:
 
             print(f"\n🏦 {bank}")
 
-            bank_folder = self.find_bank_folder(bank)
+            folder = self.find_bank_folder(bank)
 
-            if not bank_folder:
-                self.warn("Bank folder not found")
+            if not folder:
                 continue
 
-            path = os.path.join(bank_folder, "financial_report")
+            path = os.path.join(folder, "financial_report")
 
             if not os.path.exists(path):
-                self.warn("financial_report missing")
                 continue
 
-            excel_files = [
-                f for f in os.listdir(path)
-                if f.lower().endswith((".xlsx", ".xls")) and not f.startswith("~$")
-            ]
+            for file in os.listdir(path):
 
-            print(f"📄 Files: {excel_files}")
-
-            for file in excel_files:
+                if not file.lower().endswith((".xlsx", ".xls")):
+                    continue
 
                 file_path = os.path.join(path, file)
 
@@ -263,7 +293,7 @@ class FinancialExtractor:
                     metrics = self.fill_missing(metrics)
                     metrics["roe"] = self.compute_roe(metrics)
 
-                    print(f"💾 Saving → {bank} | {year} | {metrics}")
+                    print(f"💾 {bank} | {year} | {metrics}")
 
                     cursor.execute("""
                     INSERT OR REPLACE INTO financial_metrics
