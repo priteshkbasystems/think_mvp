@@ -9,10 +9,9 @@ sys.path.insert(0, "/content/drive/MyDrive/THINK_MVP")
 DB_PATH = "/content/drive/MyDrive/THINK_MVP/04_Analysis_Output/transformation_cache.db"
 BASE_PATH = "/content/drive/MyDrive/THINK_MVP/01_Corporate_Documents"
 
-print("🔥 FINAL FINANCIAL EXTRACTOR (ULTIMATE STABLE VERSION) LOADED 🔥")
+print("🔥 FINAL FINANCIAL EXTRACTOR (ULTIMATE PRODUCTION) LOADED 🔥")
 
-
-# 🔥 AUTO YEAR RANGE (last 5 years only)
+# 🔥 last 5 years only
 CURRENT_YEAR = 2026
 VALID_YEARS = [CURRENT_YEAR - i for i in range(5)]
 
@@ -20,7 +19,7 @@ VALID_YEARS = [CURRENT_YEAR - i for i in range(5)]
 class FinancialExtractor:
 
     def __init__(self):
-        print("\n🚀 Financial Metrics Extractor (FINAL STABLE)\n")
+        print("\n🚀 Financial Metrics Extractor (FINAL)\n")
 
     def log(self, msg):
         print(f"[LOG] {msg}")
@@ -49,7 +48,6 @@ class FinancialExtractor:
 
             val = float(value)
 
-            # ignore years
             if 1900 < val < 2100:
                 return None
 
@@ -79,7 +77,37 @@ class FinancialExtractor:
         return None
 
     # -------------------------------
-    # 🔥 CORE STRUCTURE ENGINE
+    # SMART MERGE
+    # -------------------------------
+    def merge_metrics(self, existing, new):
+
+        for k, v in new.items():
+
+            if not v:
+                continue
+
+            if k not in existing:
+                existing[k] = v
+            else:
+                if k in ["revenue", "net_profit", "equity", "total_assets"]:
+                    existing[k] = max(existing[k], v)
+                else:
+                    existing[k] = v
+
+        return existing
+
+    # -------------------------------
+    # FILL MISSING
+    # -------------------------------
+    def fill_missing(self, metrics):
+
+        if not metrics.get("operating_income") and metrics.get("net_profit"):
+            metrics["operating_income"] = metrics["net_profit"]
+
+        return metrics
+
+    # -------------------------------
+    # CORE EXTRACTION
     # -------------------------------
     def extract_from_df(self, df, sheet_name):
 
@@ -91,13 +119,10 @@ class FinancialExtractor:
 
         sheet_lower = sheet_name.lower()
 
-        # skip only cash flow sheets
         if any(x in sheet_lower for x in ["cash", "cf"]):
             return {}
 
-        # -------------------------------
-        # DETECT YEAR COLUMNS (STRICT)
-        # -------------------------------
+        # detect valid year columns
         year_cols = {}
 
         for col in df.columns:
@@ -105,7 +130,6 @@ class FinancialExtractor:
                 match = re.search(r"(20\d{2})", val)
                 if match:
                     year = int(match.group(1))
-
                     if year in VALID_YEARS:
                         year_cols[col] = year
 
@@ -115,31 +139,13 @@ class FinancialExtractor:
         temp_results = {}
 
         keyword_map = {
-            "revenue": [
-                "total operating income",
-                "total income"
-            ],
-            "net_profit": [
-                "net profit",
-                "profit for the year",
-                "profit attributable"
-            ],
-            "operating_income": [
-                "profit before tax"
-            ],
-            "total_assets": [
-                "total assets"
-            ],
-            "equity": [
-                "total equity",
-                "shareholders",
-                "equity attributable"
-            ]
+            "revenue": ["total operating income", "total income"],
+            "net_profit": ["net profit", "profit for the year", "profit attributable"],
+            "operating_income": ["profit before tax", "operating profit", "income before tax"],
+            "total_assets": ["total assets"],
+            "equity": ["total equity", "shareholders", "equity attributable"]
         }
 
-        # -------------------------------
-        # ROW → COLUMN MATCH
-        # -------------------------------
         for i in range(len(df)):
 
             row = df.iloc[i]
@@ -155,16 +161,13 @@ class FinancialExtractor:
                         clean_val = self.clean_value(val)
 
                         if clean_val:
-
                             temp_results.setdefault(year, {})
                             temp_results[year].setdefault(metric, [])
                             temp_results[year][metric].append(clean_val)
 
                             self.log(f"{sheet_name}: {metric} → {clean_val} ({year})")
 
-        # -------------------------------
-        # PICK BEST VALUES
-        # -------------------------------
+        # pick best values
         final_results = {}
 
         for year, metrics in temp_results.items():
@@ -202,9 +205,10 @@ class FinancialExtractor:
                 for year, metrics in extracted.items():
                     all_results.setdefault(year, {})
 
-                    for k, v in metrics.items():
-                        if v:
-                            all_results[year][k] = v
+                    all_results[year] = self.merge_metrics(
+                        all_results[year],
+                        metrics
+                    )
 
             return all_results
 
@@ -256,7 +260,7 @@ class FinancialExtractor:
 
                 for year, metrics in results.items():
 
-                    # 🔥 CALCULATE ROE
+                    metrics = self.fill_missing(metrics)
                     metrics["roe"] = self.compute_roe(metrics)
 
                     print(f"💾 Saving → {bank} | {year} | {metrics}")
