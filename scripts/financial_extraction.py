@@ -9,13 +9,13 @@ sys.path.insert(0, "/content/drive/MyDrive/THINK_MVP")
 DB_PATH = "/content/drive/MyDrive/THINK_MVP/04_Analysis_Output/transformation_cache.db"
 BASE_PATH = "/content/drive/MyDrive/THINK_MVP/01_Corporate_Documents"
 
-print("🔥 FINAL FINANCIAL EXTRACTOR (UNIVERSAL ENGINE) LOADED 🔥")
+print("🔥 FINAL FINANCIAL EXTRACTOR (UNIVERSAL ENGINE v2) LOADED 🔥")
 
 
 class FinancialExtractor:
 
     def __init__(self):
-        print("\n🚀 Financial Metrics Extractor (UNIVERSAL)\n")
+        print("\n🚀 Financial Metrics Extractor (STRUCTURE-AWARE)\n")
 
     def log(self, msg):
         print(f"[LOG] {msg}")
@@ -32,105 +32,127 @@ class FinancialExtractor:
                 return os.path.join(BASE_PATH, folder)
         return None
 
+    # -------------------------------
+    # CLEAN VALUE
+    # -------------------------------
     def clean_value(self, value):
         try:
-            val = float(str(value).replace(",", "").replace("%", "").strip())
+            value = str(value).replace(",", "").replace("%", "").strip()
 
-            # 🔥 VALID RANGE (BANK SCALE)
+            if value == "" or value.lower() in ["nan", "none"]:
+                return None
+
+            val = float(value)
+
+            if 1900 < val < 2100:
+                return None
+
             if val < 1000:
                 return None
+
             if val > 1e13:
                 return None
 
             return val
+
         except:
             return None
 
     # -------------------------------
-    # 🔥 CORE SMART EXTRACTION ENGINE
+    # ROE
     # -------------------------------
-    def find_metric_value(self, df, keywords, sheet_name):
+    def compute_roe(self, metrics):
+        try:
+            np = metrics.get("net_profit")
+            eq = metrics.get("equity")
 
-        values_found = []
+            if np and eq and eq != 0:
+                return round((np / eq) * 100, 2)
+        except:
+            pass
+        return None
 
-        matrix = df.astype(str).values
-        rows, cols = matrix.shape
-
-        for i in range(rows):
-            for j in range(cols):
-
-                cell = str(matrix[i][j]).lower()
-
-                if any(k in cell for k in keywords):
-
-                    # 🔥 SEARCH WINDOW (VERY IMPORTANT)
-                    for x in range(max(0, i-2), min(rows, i+3)):
-                        for y in range(max(0, j-2), min(cols, j+3)):
-
-                            val = self.clean_value(matrix[x][y])
-
-                            if val:
-                                values_found.append(val)
-
-        if not values_found:
-            return None
-
-        # 🔥 SMART SELECTION
-        values_found = sorted(values_found)
-
-        # Avoid extreme values
-        filtered = [v for v in values_found if v < 1e12]
-
-        if not filtered:
-            return max(values_found)
-
-        return filtered[-1]  # pick best realistic
-
+    # -------------------------------
+    # 🔥 CORE STRUCTURE ENGINE
     # -------------------------------
     def extract_from_df(self, df, sheet_name):
 
         if df.empty:
             return {}
 
+        df = df.fillna("")
+        df.columns = range(len(df.columns))  # normalize
+
         sheet_lower = sheet_name.lower()
 
-        if any(x in sheet_lower for x in ["change", "equity", "cash", "cf"]):
+        # skip only cashflow
+        if any(x in sheet_lower for x in ["cash", "cf"]):
             return {}
 
-        text = " ".join(df.astype(str).values.flatten()).lower()
+        # -------------------------------
+        # DETECT YEAR COLUMNS
+        # -------------------------------
+        year_cols = {}
 
-        year_match = re.search(r"(20\d{2})", text)
-        if not year_match:
+        for col in df.columns:
+            for val in df[col].astype(str):
+                match = re.search(r"(20\d{2})", val)
+                if match:
+                    year_cols[col] = int(match.group(1))
+
+        if not year_cols:
             return {}
-
-        year = int(year_match.group(1))
-        self.log(f"{sheet_name}: Year → {year}")
 
         results = {}
 
-        # -------------------------------
-        # 🔥 METRIC DEFINITIONS
-        # -------------------------------
-        metrics = {
-            "total_assets": ["total assets"],
-            "revenue": ["total operating income", "total income", "net interest income"],
-            "net_profit": ["net profit", "profit for the year", "profit attributable"],
-            "operating_income": ["profit before tax", "profit before income tax"]
+        keyword_map = {
+            "revenue": [
+                "total operating income",
+                "total income",
+                "interest income"
+            ],
+            "net_profit": [
+                "net profit",
+                "profit for the year",
+                "profit attributable"
+            ],
+            "operating_income": [
+                "profit before tax"
+            ],
+            "total_assets": [
+                "total assets"
+            ],
+            "equity": [
+                "total equity",
+                "shareholders",
+                "equity attributable"
+            ]
         }
 
-        for metric, keywords in metrics.items():
+        # -------------------------------
+        # ROW → COLUMN MATCH
+        # -------------------------------
+        for i in range(len(df)):
 
-            # revenue only from income sheets
-            if metric == "revenue" and not any(x in sheet_lower for x in ["income", "pl", "comprehensive"]):
-                continue
+            row = df.iloc[i]
+            row_text = " ".join(row.astype(str)).lower()
 
-            value = self.find_metric_value(df, keywords, sheet_name)
+            for metric, keywords in keyword_map.items():
 
-            if value:
-                results[metric] = value
-                self.log(f"{sheet_name}: {metric} → {value}")
+                if any(k in row_text for k in keywords):
 
-        return {year: results} if results else {}
+                    for col_idx, year in year_cols.items():
+
+                        val = row[col_idx]
+                        clean_val = self.clean_value(val)
+
+                        if clean_val:
+                            results.setdefault(year, {})
+                            results[year][metric] = clean_val
+
+                            self.log(f"{sheet_name}: {metric} → {clean_val} ({year})")
+
+        return results
 
     # -------------------------------
     def process_excel(self, file_path):
@@ -138,19 +160,20 @@ class FinancialExtractor:
         self.log(f"\n📄 Processing: {file_path}")
 
         try:
+            xls = pd.ExcelFile(file_path)
             all_results = {}
 
-            xls = pd.ExcelFile(file_path)
-
             for sheet in xls.sheet_names:
-
                 df = xls.parse(sheet)
 
                 extracted = self.extract_from_df(df, sheet)
 
                 for year, metrics in extracted.items():
                     all_results.setdefault(year, {})
-                    all_results[year].update(metrics)
+
+                    for k, v in metrics.items():
+                        if v:
+                            all_results[year][k] = v
 
             return all_results
 
@@ -187,10 +210,8 @@ class FinancialExtractor:
                 self.warn("financial_report missing")
                 continue
 
-            files = os.listdir(path)
-
             excel_files = [
-                f for f in files
+                f for f in os.listdir(path)
                 if f.lower().endswith((".xlsx", ".xls")) and not f.startswith("~$")
             ]
 
@@ -203,6 +224,9 @@ class FinancialExtractor:
                 results = self.process_excel(file_path)
 
                 for year, metrics in results.items():
+
+                    # 🔥 ROE
+                    metrics["roe"] = self.compute_roe(metrics)
 
                     print(f"💾 Saving → {bank} | {year} | {metrics}")
 
