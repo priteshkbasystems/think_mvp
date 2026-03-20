@@ -4,20 +4,19 @@ import sqlite3
 import pandas as pd
 import sys
 import pdfplumber
-from datetime import datetime
 
 sys.path.insert(0, "/content/drive/MyDrive/THINK_MVP")
 
 DB_PATH = "/content/drive/MyDrive/THINK_MVP/04_Analysis_Output/transformation_cache.db"
 BASE_PATH = "/content/drive/MyDrive/THINK_MVP/01_Corporate_Documents"
 
-print("🔥 ENTERPRISE AI EXTRACTOR + VALIDATION LOADED 🔥")
+print("🔥 ENTERPRISE AI EXTRACTOR (SAFE + VALIDATION) LOADED 🔥")
 
 
 class FinancialExtractor:
 
     def __init__(self):
-        print("\n🚀 AI ENGINE WITH VALIDATION + ERROR DETECTION\n")
+        print("\n🚀 AI ENGINE WITH SAFE EXTRACTION + VALIDATION\n")
 
     # -------------------------------
     def clean_value(self, v):
@@ -26,6 +25,24 @@ class FinancialExtractor:
             return float(v)
         except:
             return None
+
+    # -------------------------------
+    def safe_get(self, df, row, col):
+        try:
+            if col < len(df.columns):
+                return self.clean_value(df.iloc[row, col])
+        except:
+            return None
+        return None
+
+    # -------------------------------
+    def get_row_value(self, df, i):
+        # try multiple columns (robust)
+        for col in range(1, min(6, len(df.columns))):
+            val = self.safe_get(df, i, col)
+            if val:
+                return val
+        return None
 
     # -------------------------------
     def log_issue(self, cursor, bank, year, msg, severity="warning"):
@@ -40,7 +57,6 @@ class FinancialExtractor:
         issues = []
         score = 100
 
-        # critical checks
         if not data.get("total_assets"):
             issues.append("Missing total_assets")
             score -= 25
@@ -53,18 +69,15 @@ class FinancialExtractor:
             issues.append("Missing revenue")
             score -= 20
 
-        # logical checks
         if data.get("total_assets") and data.get("total_equity"):
             if data["total_equity"] > data["total_assets"]:
-                issues.append("Equity > Assets (invalid)")
+                issues.append("Equity > Assets")
                 score -= 20
 
-        # negative checks
         for k, v in data.items():
-            if isinstance(v, (int, float)) and v < 0:
-                if k not in ["credit_loss"]:
-                    issues.append(f"Negative value in {k}")
-                    score -= 10
+            if isinstance(v, (int, float)) and v < 0 and k != "credit_loss":
+                issues.append(f"Negative {k}")
+                score -= 10
 
         return issues, max(score, 0)
 
@@ -107,43 +120,54 @@ class FinancialExtractor:
         d = {}
 
         for df in tables:
-            txt = " ".join(df.astype(str).values.flatten()).lower()
+
+            # skip weak tables
+            if len(df.columns) < 2:
+                continue
 
             for i in range(len(df)):
                 row = " ".join(df.iloc[i].astype(str)).lower()
+                val = self.get_row_value(df, i)
+
+                if not val:
+                    continue
 
                 if "total assets" in row:
-                    d["total_assets"] = self.clean_value(df.iloc[i,1])
+                    d["total_assets"] = val
                 elif "total liabilities" in row:
-                    d["total_liabilities"] = self.clean_value(df.iloc[i,1])
+                    d["total_liabilities"] = val
                 elif "total equity" in row:
-                    d["total_equity"] = self.clean_value(df.iloc[i,1])
+                    d["total_equity"] = val
                 elif "interest income" in row:
-                    d["interest_income"] = self.clean_value(df.iloc[i,1])
+                    d["interest_income"] = val
                 elif "net interest income" in row:
-                    d["net_interest_income"] = self.clean_value(df.iloc[i,1])
+                    d["net_interest_income"] = val
                 elif "total operating income" in row:
-                    d["total_operating_income"] = self.clean_value(df.iloc[i,1])
+                    d["total_operating_income"] = val
                 elif "expenses" in row:
-                    d["operating_expenses"] = self.clean_value(df.iloc[i,1])
+                    d["operating_expenses"] = val
                 elif "credit loss" in row:
-                    d["credit_loss"] = self.clean_value(df.iloc[i,1])
+                    d["credit_loss"] = val
                 elif "profit" in row:
-                    d["net_profit"] = self.clean_value(df.iloc[i,1])
+                    d["net_profit"] = val
                 elif "loans" in row:
-                    d["loans"] = self.clean_value(df.iloc[i,1])
+                    d["loans"] = val
                 elif "deposits" in row:
-                    d["deposits"] = self.clean_value(df.iloc[i,1])
+                    d["deposits"] = val
 
-        # ratios
+        # -------------------------------
+        # COMPUTE RATIOS
+        # -------------------------------
         if d.get("net_profit") and d.get("total_equity"):
-            d["roe"] = round((d["net_profit"]/d["total_equity"])*100,2)
+            d["roe"] = round((d["net_profit"] / d["total_equity"]) * 100, 2)
 
         if d.get("loans") and d.get("deposits"):
-            d["loan_to_deposit"] = round(d["loans"]/d["deposits"],2)
+            d["loan_to_deposit"] = round(d["loans"] / d["deposits"], 2)
 
         if d.get("operating_expenses") and d.get("total_operating_income"):
-            d["cost_to_income"] = round(d["operating_expenses"]/d["total_operating_income"],2)
+            d["cost_to_income"] = round(
+                d["operating_expenses"] / d["total_operating_income"], 2
+            )
 
         return d, text
 
@@ -208,13 +232,11 @@ class FinancialExtractor:
 
                 print(f"💾 FINAL ({score}% confidence) → {final}")
 
-                # log issues
                 for issue in issues:
                     self.log_issue(cursor, bank, year, issue)
 
-                # skip very bad data
                 if score < 40:
-                    print("❌ Skipping due to low confidence")
+                    print("❌ Skipping low confidence")
                     continue
 
                 cursor.execute("""
@@ -255,7 +277,7 @@ class FinancialExtractor:
         conn.commit()
         conn.close()
 
-        print("\n✅ DONE WITH VALIDATION\n")
+        print("\n✅ DONE (NO CRASH, FULL SAFE MODE)\n")
 
 
 def main():
