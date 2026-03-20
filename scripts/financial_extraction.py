@@ -9,13 +9,13 @@ sys.path.insert(0, "/content/drive/MyDrive/THINK_MVP")
 DB_PATH = "/content/drive/MyDrive/THINK_MVP/04_Analysis_Output/transformation_cache.db"
 BASE_PATH = "/content/drive/MyDrive/THINK_MVP/01_Corporate_Documents"
 
-print("🔥 FINAL FINANCIAL EXTRACTOR (PRODUCTION STABLE) LOADED 🔥")
+print("🔥 FINAL FINANCIAL EXTRACTOR (UNIVERSAL ENGINE) LOADED 🔥")
 
 
 class FinancialExtractor:
 
     def __init__(self):
-        print("\n🚀 Financial Metrics Extractor (FINAL STABLE)\n")
+        print("\n🚀 Financial Metrics Extractor (UNIVERSAL)\n")
 
     def log(self, msg):
         print(f"[LOG] {msg}")
@@ -34,13 +34,12 @@ class FinancialExtractor:
 
     def clean_value(self, value):
         try:
-            value = str(value).replace(",", "").replace("%", "").strip()
-            val = float(value)
+            val = float(str(value).replace(",", "").replace("%", "").strip())
 
-            # 🔥 FILTER BAD VALUES
+            # 🔥 VALID RANGE (BANK SCALE)
             if val < 1000:
                 return None
-            if val > 1e13:  # avoid corrupted huge values
+            if val > 1e13:
                 return None
 
             return val
@@ -48,57 +47,44 @@ class FinancialExtractor:
             return None
 
     # -------------------------------
-    # 🔥 SPECIAL BANGKOK HANDLER
+    # 🔥 CORE SMART EXTRACTION ENGINE
     # -------------------------------
-    def extract_bangkok(self, df):
+    def find_metric_value(self, df, keywords, sheet_name):
 
-        results = {}
-        text = " ".join(df.astype(str).values.flatten()).lower()
+        values_found = []
 
-        year_match = re.search(r"(20\d{2})", text)
-        if not year_match:
-            return {}
+        matrix = df.astype(str).values
+        rows, cols = matrix.shape
 
-        year = int(year_match.group(1))
-        results[year] = {}
+        for i in range(rows):
+            for j in range(cols):
 
-        # -------------------------------
-        # STEP 1: REGEX
-        # -------------------------------
-        patterns = {
-            "revenue": r"(net interest income|total operating income)[^0-9]{0,50}([\d,]+)",
-            "net_profit": r"(profit attributable|net profit)[^0-9]{0,50}([\d,]+)",
-            "total_assets": r"(total assets)[^0-9]{0,50}([\d,]+)"
-        }
+                cell = str(matrix[i][j]).lower()
 
-        for metric, pattern in patterns.items():
-            match = re.search(pattern, text)
-            if match:
-                value = self.clean_value(match.group(2))
-                if value:
-                    results[year][metric] = value
-                    self.log(f"Bangkok regex {metric} → {value}")
+                if any(k in cell for k in keywords):
 
-        # -------------------------------
-        # STEP 2: SAFE FALLBACK
-        # -------------------------------
-        if "total_assets" not in results[year]:
+                    # 🔥 SEARCH WINDOW (VERY IMPORTANT)
+                    for x in range(max(0, i-2), min(rows, i+3)):
+                        for y in range(max(0, j-2), min(cols, j+3)):
 
-            candidates = []
+                            val = self.clean_value(matrix[x][y])
 
-            for val in df.values.flatten():
-                value = self.clean_value(val)
+                            if val:
+                                values_found.append(val)
 
-                # realistic bank asset range
-                if value and 1e6 < value < 1e12:
-                    candidates.append(value)
+        if not values_found:
+            return None
 
-            if candidates:
-                best = max(candidates)
-                results[year]["total_assets"] = best
-                self.log(f"Bangkok fallback total_assets → {best}")
+        # 🔥 SMART SELECTION
+        values_found = sorted(values_found)
 
-        return results
+        # Avoid extreme values
+        filtered = [v for v in values_found if v < 1e12]
+
+        if not filtered:
+            return max(values_found)
+
+        return filtered[-1]  # pick best realistic
 
     # -------------------------------
     def extract_from_df(self, df, sheet_name):
@@ -108,75 +94,43 @@ class FinancialExtractor:
 
         sheet_lower = sheet_name.lower()
 
-        # skip irrelevant sheets
         if any(x in sheet_lower for x in ["change", "equity", "cash", "cf"]):
             return {}
 
-        full_text = " ".join(df.astype(str).values.flatten()).lower()
+        text = " ".join(df.astype(str).values.flatten()).lower()
 
-        year_match = re.search(r"(20\d{2})", full_text)
+        year_match = re.search(r"(20\d{2})", text)
         if not year_match:
             return {}
 
         year = int(year_match.group(1))
         self.log(f"{sheet_name}: Year → {year}")
 
-        keyword_map = {
-            "revenue": [
-                "total operating income",
-                "total income",
-                "interest income",
-                "net interest income"
-            ],
-            "net_profit": [
-                "net profit",
-                "profit for the year",
-                "profit attributable"
-            ],
-            "operating_income": [
-                "profit before tax",
-                "profit before income tax"
-            ],
-            "total_assets": [
-                "total assets"
-            ]
+        results = {}
+
+        # -------------------------------
+        # 🔥 METRIC DEFINITIONS
+        # -------------------------------
+        metrics = {
+            "total_assets": ["total assets"],
+            "revenue": ["total operating income", "total income", "net interest income"],
+            "net_profit": ["net profit", "profit for the year", "profit attributable"],
+            "operating_income": ["profit before tax", "profit before income tax"]
         }
 
-        temp_store = {k: [] for k in keyword_map.keys()}
+        for metric, keywords in metrics.items():
 
-        rows = df.values
+            # revenue only from income sheets
+            if metric == "revenue" and not any(x in sheet_lower for x in ["income", "pl", "comprehensive"]):
+                continue
 
-        for i in range(len(rows)):
+            value = self.find_metric_value(df, keywords, sheet_name)
 
-            row_text = " ".join([str(x).lower() for x in rows[i]])
+            if value:
+                results[metric] = value
+                self.log(f"{sheet_name}: {metric} → {value}")
 
-            for metric, keywords in keyword_map.items():
-
-                # revenue only from income sheets
-                if metric == "revenue" and not any(x in sheet_lower for x in ["income", "pl", "comprehensive"]):
-                    continue
-
-                if any(k in row_text for k in keywords):
-
-                    # 🔥 search current + next row
-                    for r in [i, min(i+1, len(rows)-1)]:
-                        for val in rows[r]:
-                            value = self.clean_value(val)
-                            if value:
-                                temp_store[metric].append(value)
-
-        final = {}
-
-        for metric, values in temp_store.items():
-            if values:
-                # pick MOST REALISTIC (not always max)
-                values = sorted(values)
-                final_val = values[-1]
-
-                final[metric] = final_val
-                self.log(f"{sheet_name}: FINAL {metric} → {final_val}")
-
-        return {year: final} if final else {}
+        return {year: results} if results else {}
 
     # -------------------------------
     def process_excel(self, file_path):
@@ -184,15 +138,12 @@ class FinancialExtractor:
         self.log(f"\n📄 Processing: {file_path}")
 
         try:
-            if "bangkok" in file_path.lower():
-                df = pd.concat(pd.read_excel(file_path, sheet_name=None).values())
-                return self.extract_bangkok(df)
-
             all_results = {}
 
             xls = pd.ExcelFile(file_path)
 
             for sheet in xls.sheet_names:
+
                 df = xls.parse(sheet)
 
                 extracted = self.extract_from_df(df, sheet)
