@@ -3,13 +3,14 @@ import re
 import sqlite3
 import pandas as pd
 import sys
+import pdfplumber
 
 sys.path.insert(0, "/content/drive/MyDrive/THINK_MVP")
 
 DB_PATH = "/content/drive/MyDrive/THINK_MVP/04_Analysis_Output/transformation_cache.db"
 BASE_PATH = "/content/drive/MyDrive/THINK_MVP/01_Corporate_Documents"
 
-print("🔥 FINAL FINANCIAL EXTRACTOR (AI-LEVEL 100%) LOADED 🔥")
+print("🔥 FINAL FINANCIAL EXTRACTOR (AI+PDF HYBRID ENGINE) LOADED 🔥")
 
 CURRENT_YEAR = 2026
 VALID_YEARS = [CURRENT_YEAR - i for i in range(5)]
@@ -18,7 +19,7 @@ VALID_YEARS = [CURRENT_YEAR - i for i in range(5)]
 class FinancialExtractor:
 
     def __init__(self):
-        print("\n🚀 Financial Metrics Extractor (AI ENGINE)\n")
+        print("\n🚀 Financial Metrics Extractor (AI HYBRID ENGINE)\n")
 
     def log(self, msg):
         print(f"[LOG] {msg}")
@@ -36,7 +37,7 @@ class FinancialExtractor:
         return None
 
     # -------------------------------
-    # CLEAN VALUE
+    # CLEAN VALUE (IMPROVED)
     # -------------------------------
     def clean_value(self, value):
         try:
@@ -47,10 +48,8 @@ class FinancialExtractor:
 
             val = float(value)
 
-            if 1900 < val < 2100:
-                return None
-
-            if val < 1000:
+            # allow realistic bank numbers
+            if val < 100:
                 return None
 
             if val > 1e13:
@@ -96,17 +95,76 @@ class FinancialExtractor:
         return existing
 
     # -------------------------------
-    # FILL MISSING
+    # PDF TEXT EXTRACTION
     # -------------------------------
-    def fill_missing(self, metrics):
-
-        if not metrics.get("operating_income") and metrics.get("net_profit"):
-            metrics["operating_income"] = metrics["net_profit"]
-
-        return metrics
+    def extract_pdf_text(self, pdf_path):
+        text = ""
+        try:
+            with pdfplumber.open(pdf_path) as pdf:
+                for page in pdf.pages:
+                    t = page.extract_text()
+                    if t:
+                        text += "\n" + t.lower()
+        except:
+            pass
+        return text
 
     # -------------------------------
-    # STRUCTURE EXTRACTION
+    # PDF METRIC FINDER
+    # -------------------------------
+    def find_metric_text(self, text, patterns):
+
+        for p in patterns:
+            m = re.search(p, text)
+            if m:
+                val = self.clean_value(m.group(1))
+                if val:
+                    return val
+        return None
+
+    # -------------------------------
+    # PDF EXTRACTOR
+    # -------------------------------
+    def process_pdf(self, pdf_path, bank):
+
+        self.log(f"📄 PDF Processing: {pdf_path}")
+
+        text = self.extract_pdf_text(pdf_path)
+
+        year = 2025  # default (can improve later)
+
+        data = {}
+
+        # 🔥 SMART PATTERNS
+        patterns = {
+            "revenue": [
+                r"operating income[^0-9]{0,50}([\d,]+)",
+                r"total income[^0-9]{0,50}([\d,]+)"
+            ],
+            "net_profit": [
+                r"net profit[^0-9]{0,50}([\d,]+)"
+            ],
+            "total_assets": [
+                r"assets[^0-9]{0,50}([\d,]+)"
+            ],
+            "equity": [
+                r"equity[^0-9]{0,50}([\d,]+)"
+            ]
+        }
+
+        # Bangkok override
+        if "bangkok" in bank.lower():
+            patterns["revenue"] = [r"operating income[^0-9]{0,50}([\d,]+)"]
+
+        for metric, pats in patterns.items():
+            val = self.find_metric_text(text, pats)
+            if val:
+                data[metric] = val
+
+        return {year: data}
+
+    # -------------------------------
+    # STRUCTURED EXCEL EXTRACTION
     # -------------------------------
     def extract_from_df(self, df, sheet_name):
 
@@ -133,8 +191,8 @@ class FinancialExtractor:
             return {}
 
         keyword_map = {
-            "revenue": ["total operating income", "total income"],
-            "net_profit": ["net profit", "profit for the year", "profit attributable"],
+            "revenue": ["total operating income", "operating income"],
+            "net_profit": ["net profit", "profit attributable"],
             "operating_income": ["profit before tax", "operating profit"],
             "total_assets": ["total assets"],
             "equity": ["total equity", "shareholders"]
@@ -168,7 +226,7 @@ class FinancialExtractor:
         return final
 
     # -------------------------------
-    # TEXT FALLBACK
+    # TEXT FALLBACK (IMPROVED)
     # -------------------------------
     def fallback_text(self, df):
 
@@ -177,52 +235,27 @@ class FinancialExtractor:
         data = {}
 
         patterns = {
-            "revenue": r"total operating income[^0-9]{0,50}([\d,]+)",
-            "net_profit": r"(net profit|profit attributable)[^0-9]{0,50}([\d,]+)",
+            "revenue": r"(operating income|total income)[^0-9]{0,50}([\d,]+)",
+            "net_profit": r"net profit[^0-9]{0,50}([\d,]+)",
             "total_assets": r"total assets[^0-9]{0,50}([\d,]+)",
-            "equity": r"(total equity|shareholders)[^0-9]{0,50}([\d,]+)"
+            "equity": r"equity[^0-9]{0,50}([\d,]+)"
         }
 
         for k, p in patterns.items():
             m = re.search(p, text)
             if m:
-                val = self.clean_value(m.group(1))
+                val = self.clean_value(m.group(2 if "income" in k else 1))
                 if val:
                     data[k] = val
 
         return data
 
     # -------------------------------
-    # BANGKOK SPECIAL
-    # -------------------------------
-    def extract_bangkok(self, file_path):
-
-        df = pd.concat(pd.read_excel(file_path, sheet_name=None).values())
-        text = " ".join(df.astype(str).values.flatten()).lower()
-
-        year = 2025
-
-        return {
-            year: self.fallback_text(df)
-        }
-
-    # -------------------------------
-    # AI FALLBACK (HOOK)
-    # -------------------------------
-    def ai_fallback(self, df):
-        # 🔥 placeholder for GPT / LLM integration
-        # you can plug OpenAI here later
-        return {}
-
-    # -------------------------------
     def process_excel(self, file_path):
 
-        self.log(f"\n📄 Processing: {file_path}")
+        self.log(f"\n📄 Processing Excel: {file_path}")
 
         try:
-
-            if "bangkok" in file_path.lower():
-                return self.extract_bangkok(file_path)
 
             xls = pd.ExcelFile(file_path)
             all_results = {}
@@ -242,16 +275,10 @@ class FinancialExtractor:
                 for year in all_results:
                     all_results[year] = self.merge_metrics(all_results[year], fallback)
 
-                # 🔥 AI fallback (last layer)
-                ai_data = self.ai_fallback(df)
-
-                for year in all_results:
-                    all_results[year] = self.merge_metrics(all_results[year], ai_data)
-
             return all_results
 
         except Exception as e:
-            self.warn(f"File error: {e}")
+            self.warn(f"Excel error: {e}")
             return {}
 
     # -------------------------------
@@ -281,16 +308,19 @@ class FinancialExtractor:
 
             for file in os.listdir(path):
 
-                if not file.lower().endswith((".xlsx", ".xls")):
-                    continue
-
                 file_path = os.path.join(path, file)
 
-                results = self.process_excel(file_path)
+                if file.lower().endswith((".xlsx", ".xls")):
+                    results = self.process_excel(file_path)
+
+                elif file.lower().endswith(".pdf"):
+                    results = self.process_pdf(file_path, bank)
+
+                else:
+                    continue
 
                 for year, metrics in results.items():
 
-                    metrics = self.fill_missing(metrics)
                     metrics["roe"] = self.compute_roe(metrics)
 
                     print(f"💾 {bank} | {year} | {metrics}")
