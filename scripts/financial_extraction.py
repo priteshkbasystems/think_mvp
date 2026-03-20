@@ -10,23 +10,27 @@ sys.path.insert(0, "/content/drive/MyDrive/THINK_MVP")
 DB_PATH = "/content/drive/MyDrive/THINK_MVP/04_Analysis_Output/transformation_cache.db"
 BASE_PATH = "/content/drive/MyDrive/THINK_MVP/01_Corporate_Documents"
 
-print("🔥 FINAL FINANCIAL EXTRACTOR (AI+PDF HYBRID ENGINE) LOADED 🔥")
-
-CURRENT_YEAR = 2026
-VALID_YEARS = [CURRENT_YEAR - i for i in range(5)]
+print("🔥 FINAL FINANCIAL EXTRACTOR (ENTERPRISE AI ENGINE) LOADED 🔥")
 
 
 class FinancialExtractor:
 
     def __init__(self):
-        print("\n🚀 Financial Metrics Extractor (AI HYBRID ENGINE)\n")
+        print("\n🚀 FULL FINANCIAL ENGINE (MULTI-PDF + MULTI-YEAR)\n")
 
-    def log(self, msg):
-        print(f"[LOG] {msg}")
+    # -------------------------------
+    # CLEAN VALUE
+    # -------------------------------
+    def clean_value(self, v):
+        try:
+            v = str(v).replace(",", "").replace("%", "").strip()
+            return float(v)
+        except:
+            return None
 
-    def warn(self, msg):
-        print(f"[WARNING] {msg}")
-
+    # -------------------------------
+    # NORMALIZE
+    # -------------------------------
     def normalize_name(self, name):
         return name.lower().replace(" ", "").replace("_", "")
 
@@ -37,254 +41,196 @@ class FinancialExtractor:
         return None
 
     # -------------------------------
-    # CLEAN VALUE (IMPROVED)
+    # PERIOD DETECTION
     # -------------------------------
-    def clean_value(self, value):
-        try:
-            value = str(value).replace(",", "").replace("%", "").strip()
+    def detect_period(self, file_name):
+        f = file_name.lower()
 
-            if value == "" or value.lower() in ["nan", "none"]:
-                return None
+        if "march" in f:
+            return "Q1"
+        elif "june" in f:
+            return "H1"
+        elif "september" in f:
+            return "9M"
+        elif "december" in f:
+            return "annual"
 
-            val = float(value)
-
-            # allow realistic bank numbers
-            if val < 100:
-                return None
-
-            if val > 1e13:
-                return None
-
-            return val
-
-        except:
-            return None
+        return "unknown"
 
     # -------------------------------
-    # ROE
+    # PDF TABLE EXTRACTION
     # -------------------------------
-    def compute_roe(self, metrics):
-        try:
-            np = metrics.get("net_profit")
-            eq = metrics.get("equity")
-
-            if np and eq and eq > 0:
-                return round((np / eq) * 100, 2)
-        except:
-            pass
-        return None
+    def extract_tables(self, pdf_path):
+        tables = []
+        with pdfplumber.open(pdf_path) as pdf:
+            for page in pdf.pages:
+                t = page.extract_tables()
+                for tb in t:
+                    tables.append(pd.DataFrame(tb))
+        return tables
 
     # -------------------------------
-    # MERGE
+    # BALANCE SHEET
     # -------------------------------
-    def merge_metrics(self, existing, new):
+    def extract_balance(self, tables):
+        d = {}
 
-        for k, v in new.items():
+        for df in tables:
+            txt = " ".join(df.astype(str).values.flatten()).lower()
 
-            if not v:
-                continue
+            if "total assets" in txt:
 
-            if k not in existing:
-                existing[k] = v
-            else:
-                if k in ["revenue", "net_profit", "equity", "total_assets"]:
-                    existing[k] = max(existing[k], v)
-                else:
-                    existing[k] = v
+                for i in range(len(df)):
+                    row = " ".join(df.iloc[i].astype(str)).lower()
 
-        return existing
+                    if "total assets" in row:
+                        d["total_assets"] = self.clean_value(df.iloc[i,1])
+                    elif "total liabilities" in row:
+                        d["total_liabilities"] = self.clean_value(df.iloc[i,1])
+                    elif "total equity" in row:
+                        d["total_equity"] = self.clean_value(df.iloc[i,1])
+                    elif "loans" in row:
+                        d["loans"] = self.clean_value(df.iloc[i,1])
+                    elif "deposits" in row:
+                        d["deposits"] = self.clean_value(df.iloc[i,1])
+
+        return d
 
     # -------------------------------
-    # PDF TEXT EXTRACTION
+    # INCOME STATEMENT
     # -------------------------------
-    def extract_pdf_text(self, pdf_path):
+    def extract_income(self, tables):
+        d = {}
+
+        for df in tables:
+            txt = " ".join(df.astype(str).values.flatten()).lower()
+
+            if "interest income" in txt:
+
+                for i in range(len(df)):
+                    row = " ".join(df.iloc[i].astype(str)).lower()
+
+                    if "interest income" in row:
+                        d["interest_income"] = self.clean_value(df.iloc[i,1])
+                    elif "net interest income" in row:
+                        d["net_interest_income"] = self.clean_value(df.iloc[i,1])
+                    elif "fees" in row:
+                        d["fee_income"] = self.clean_value(df.iloc[i,1])
+                    elif "total operating income" in row:
+                        d["total_operating_income"] = self.clean_value(df.iloc[i,1])
+                    elif "expenses" in row:
+                        d["operating_expenses"] = self.clean_value(df.iloc[i,1])
+                    elif "credit loss" in row:
+                        d["credit_loss"] = self.clean_value(df.iloc[i,1])
+                    elif "profit" in row:
+                        d["net_profit"] = self.clean_value(df.iloc[i,1])
+
+        return d
+
+    # -------------------------------
+    # CASH FLOW
+    # -------------------------------
+    def extract_cashflow(self, tables):
+        d = {}
+
+        for df in tables:
+            txt = " ".join(df.astype(str).values.flatten()).lower()
+
+            if "cash flows" in txt:
+
+                for i in range(len(df)):
+                    row = " ".join(df.iloc[i].astype(str)).lower()
+
+                    if "operating activities" in row:
+                        d["operating_cashflow"] = self.clean_value(df.iloc[i,1])
+                    elif "investing activities" in row:
+                        d["investing_cashflow"] = self.clean_value(df.iloc[i,1])
+                    elif "financing activities" in row:
+                        d["financing_cashflow"] = self.clean_value(df.iloc[i,1])
+
+        return d
+
+    # -------------------------------
+    # RATIOS (TEXT)
+    # -------------------------------
+    def extract_ratios(self, pdf_path):
         text = ""
-        try:
-            with pdfplumber.open(pdf_path) as pdf:
-                for page in pdf.pages:
-                    t = page.extract_text()
-                    if t:
-                        text += "\n" + t.lower()
-        except:
-            pass
-        return text
 
-    # -------------------------------
-    # PDF METRIC FINDER
-    # -------------------------------
-    def find_metric_text(self, text, patterns):
+        with pdfplumber.open(pdf_path) as pdf:
+            for p in pdf.pages:
+                t = p.extract_text()
+                if t:
+                    text += t.lower()
 
-        for p in patterns:
-            m = re.search(p, text)
-            if m:
-                val = self.clean_value(m.group(1))
-                if val:
-                    return val
-        return None
-
-    # -------------------------------
-    # PDF EXTRACTOR
-    # -------------------------------
-    def process_pdf(self, pdf_path, bank):
-
-        self.log(f"📄 PDF Processing: {pdf_path}")
-
-        text = self.extract_pdf_text(pdf_path)
-
-        year = 2025  # default (can improve later)
-
-        data = {}
-
-        # 🔥 SMART PATTERNS
-        patterns = {
-            "revenue": [
-                r"operating income[^0-9]{0,50}([\d,]+)",
-                r"total income[^0-9]{0,50}([\d,]+)"
-            ],
-            "net_profit": [
-                r"net profit[^0-9]{0,50}([\d,]+)"
-            ],
-            "total_assets": [
-                r"assets[^0-9]{0,50}([\d,]+)"
-            ],
-            "equity": [
-                r"equity[^0-9]{0,50}([\d,]+)"
-            ]
-        }
-
-        # Bangkok override
-        if "bangkok" in bank.lower():
-            patterns["revenue"] = [r"operating income[^0-9]{0,50}([\d,]+)"]
-
-        for metric, pats in patterns.items():
-            val = self.find_metric_text(text, pats)
-            if val:
-                data[metric] = val
-
-        return {year: data}
-
-    # -------------------------------
-    # STRUCTURED EXCEL EXTRACTION
-    # -------------------------------
-    def extract_from_df(self, df, sheet_name):
-
-        if df.empty:
-            return {}
-
-        df = df.fillna("")
-        df.columns = range(len(df.columns))
-
-        if any(x in sheet_name.lower() for x in ["cash", "cf"]):
-            return {}
-
-        year_cols = {}
-
-        for col in df.columns:
-            for val in df[col].astype(str):
-                match = re.search(r"(20\d{2})", val)
-                if match:
-                    year = int(match.group(1))
-                    if year in VALID_YEARS:
-                        year_cols[col] = year
-
-        if not year_cols:
-            return {}
-
-        keyword_map = {
-            "revenue": ["total operating income", "operating income"],
-            "net_profit": ["net profit", "profit attributable"],
-            "operating_income": ["profit before tax", "operating profit"],
-            "total_assets": ["total assets"],
-            "equity": ["total equity", "shareholders"]
-        }
-
-        temp = {}
-
-        for i in range(len(df)):
-            row = df.iloc[i]
-            row_text = " ".join(row.astype(str)).lower()
-
-            for metric, keys in keyword_map.items():
-
-                if any(k in row_text for k in keys):
-
-                    for col_idx, year in year_cols.items():
-                        val = self.clean_value(row[col_idx])
-
-                        if val:
-                            temp.setdefault(year, {})
-                            temp[year].setdefault(metric, []).append(val)
-
-        final = {}
-
-        for year, metrics in temp.items():
-            final[year] = {}
-
-            for k, vals in metrics.items():
-                final[year][k] = max(vals)
-
-        return final
-
-    # -------------------------------
-    # TEXT FALLBACK (IMPROVED)
-    # -------------------------------
-    def fallback_text(self, df):
-
-        text = " ".join(df.astype(str).values.flatten()).lower()
-
-        data = {}
+        d = {}
 
         patterns = {
-            "revenue": r"(operating income|total income)[^0-9]{0,50}([\d,]+)",
-            "net_profit": r"net profit[^0-9]{0,50}([\d,]+)",
-            "total_assets": r"total assets[^0-9]{0,50}([\d,]+)",
-            "equity": r"equity[^0-9]{0,50}([\d,]+)"
+            "car": r"capital adequacy ratio[^0-9]+([\d\.]+)",
+            "tier1_ratio": r"tier 1[^0-9]+([\d\.]+)",
+            "cet1_ratio": r"common equity tier 1[^0-9]+([\d\.]+)"
         }
 
         for k, p in patterns.items():
             m = re.search(p, text)
             if m:
-                val = self.clean_value(m.group(2 if "income" in k else 1))
-                if val:
-                    data[k] = val
+                d[k] = float(m.group(1))
 
-        return data
+        return d
 
     # -------------------------------
-    def process_excel(self, file_path):
+    # COMPUTE RATIOS
+    # -------------------------------
+    def compute_ratios(self, d):
 
-        self.log(f"\n📄 Processing Excel: {file_path}")
+        if d.get("net_profit") and d.get("total_equity"):
+            d["roe"] = round((d["net_profit"]/d["total_equity"])*100,2)
 
-        try:
+        if d.get("loans") and d.get("deposits"):
+            d["loan_to_deposit"] = round(d["loans"]/d["deposits"],2)
 
-            xls = pd.ExcelFile(file_path)
-            all_results = {}
+        if d.get("operating_expenses") and d.get("total_operating_income"):
+            d["cost_to_income"] = round(d["operating_expenses"]/d["total_operating_income"],2)
 
-            for sheet in xls.sheet_names:
+        return d
 
-                df = xls.parse(sheet)
+    # -------------------------------
+    # PROCESS PDF
+    # -------------------------------
+    def process_pdf(self, pdf_path):
 
-                structured = self.extract_from_df(df, sheet)
+        tables = self.extract_tables(pdf_path)
 
-                for year, metrics in structured.items():
-                    all_results.setdefault(year, {})
-                    all_results[year] = self.merge_metrics(all_results[year], metrics)
+        data = {}
+        data.update(self.extract_balance(tables))
+        data.update(self.extract_income(tables))
+        data.update(self.extract_cashflow(tables))
+        data.update(self.extract_ratios(pdf_path))
 
-                fallback = self.fallback_text(df)
+        return self.compute_ratios(data)
 
-                for year in all_results:
-                    all_results[year] = self.merge_metrics(all_results[year], fallback)
+    # -------------------------------
+    # MERGE PERIOD DATA
+    # -------------------------------
+    def merge_year(self, pdata):
 
-            return all_results
+        priority = ["annual", "9M", "H1", "Q1"]
 
-        except Exception as e:
-            self.warn(f"Excel error: {e}")
-            return {}
+        final = {}
 
+        for p in priority:
+            if p in pdata:
+                for k, v in pdata[p].items():
+                    if v and k not in final:
+                        final[k] = v
+
+        return final
+
+    # -------------------------------
+    # RUN
     # -------------------------------
     def run(self):
 
-        print("\n🚀 STARTING EXTRACTION\n")
+        print("\n🚀 STARTING FULL EXTRACTION\n")
 
         conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
@@ -296,48 +242,74 @@ class FinancialExtractor:
 
             print(f"\n🏦 {bank}")
 
-            folder = self.find_bank_folder(bank)
-
-            if not folder:
+            bank_folder = self.find_bank_folder(bank)
+            if not bank_folder:
                 continue
 
-            path = os.path.join(folder, "financial_report")
+            base = os.path.join(bank_folder, "financial_report")
 
-            if not os.path.exists(path):
+            if not os.path.exists(base):
                 continue
 
-            for file in os.listdir(path):
+            for year_folder in os.listdir(base):
 
-                file_path = os.path.join(path, file)
+                year_path = os.path.join(base, year_folder)
 
-                if file.lower().endswith((".xlsx", ".xls")):
-                    results = self.process_excel(file_path)
-
-                elif file.lower().endswith(".pdf"):
-                    results = self.process_pdf(file_path, bank)
-
-                else:
+                if not os.path.isdir(year_path) or not year_folder.isdigit():
                     continue
 
-                for year, metrics in results.items():
+                year = int(year_folder)
+                print(f"\n📅 {year}")
 
-                    metrics["roe"] = self.compute_roe(metrics)
+                pdata = {}
 
-                    print(f"💾 {bank} | {year} | {metrics}")
+                for file in os.listdir(year_path):
 
-                    cursor.execute("""
-                    INSERT OR REPLACE INTO financial_metrics
-                    (bank_name, year, revenue, net_profit, operating_income, total_assets, roe)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
-                    """, (
-                        bank,
-                        year,
-                        metrics.get("revenue"),
-                        metrics.get("net_profit"),
-                        metrics.get("operating_income"),
-                        metrics.get("total_assets"),
-                        metrics.get("roe")
-                    ))
+                    if not file.endswith(".pdf"):
+                        continue
+
+                    period = self.detect_period(file)
+                    file_path = os.path.join(year_path, file)
+
+                    print(f"   📄 {file} → {period}")
+
+                    pdata[period] = self.process_pdf(file_path)
+
+                final = self.merge_year(pdata)
+                final = self.compute_ratios(final)
+
+                print(f"💾 FINAL → {final}")
+
+                cursor.execute("""
+                INSERT OR REPLACE INTO financial_full VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                """, (
+                    bank, year, "final",
+
+                    final.get("interest_income"),
+                    final.get("net_interest_income"),
+                    final.get("fee_income"),
+                    final.get("total_operating_income"),
+                    final.get("operating_expenses"),
+                    final.get("credit_loss"),
+                    final.get("net_profit"),
+
+                    final.get("total_assets"),
+                    final.get("total_liabilities"),
+                    final.get("total_equity"),
+                    final.get("loans"),
+                    final.get("deposits"),
+
+                    final.get("operating_cashflow"),
+                    final.get("investing_cashflow"),
+                    final.get("financing_cashflow"),
+
+                    final.get("roe"),
+                    final.get("loan_to_deposit"),
+                    final.get("cost_to_income"),
+                    final.get("car"),
+                    final.get("tier1_ratio"),
+                    final.get("cet1_ratio")
+                ))
 
         conn.commit()
         conn.close()

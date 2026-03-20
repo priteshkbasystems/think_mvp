@@ -272,6 +272,48 @@ def init_db():
         PRIMARY KEY (bank_name, year)
     )
     """)
+
+    # ------------------------------
+    # FINANCIAL FULL
+    # ------------------------------
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS financial_full (
+    bank_name TEXT,
+    year INTEGER,
+    period_type TEXT,
+
+    -- INCOME
+    interest_income REAL,
+    net_interest_income REAL,
+    fee_income REAL,
+    total_operating_income REAL,
+    operating_expenses REAL,
+    credit_loss REAL,
+    net_profit REAL,
+
+    -- BALANCE SHEET
+    total_assets REAL,
+    total_liabilities REAL,
+    total_equity REAL,
+    loans REAL,
+    deposits REAL,
+
+    -- CASH FLOW
+    operating_cashflow REAL,
+    investing_cashflow REAL,
+    financing_cashflow REAL,
+
+    -- RATIOS
+    roe REAL,
+    loan_to_deposit REAL,
+    cost_to_income REAL,
+    car REAL,
+    tier1_ratio REAL,
+    cet1_ratio REAL,
+
+    PRIMARY KEY (bank_name, year, period_type)
+    )
+    """)
     # ==========================================
     # HUMAN FEEDBACK LOOP
     # ==========================================
