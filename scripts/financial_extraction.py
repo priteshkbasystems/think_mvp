@@ -9,13 +9,13 @@ sys.path.insert(0, "/content/drive/MyDrive/THINK_MVP")
 DB_PATH = "/content/drive/MyDrive/THINK_MVP/04_Analysis_Output/transformation_cache.db"
 BASE_PATH = "/content/drive/MyDrive/THINK_MVP/01_Corporate_Documents"
 
-print("🔥 FINAL FINANCIAL EXTRACTOR (ABSOLUTE FINAL FIXED) LOADED 🔥")
+print("🔥 FINAL FINANCIAL EXTRACTOR (PRODUCTION STABLE) LOADED 🔥")
 
 
 class FinancialExtractor:
 
     def __init__(self):
-        print("\n🚀 Financial Metrics Extractor (ABSOLUTE FINAL)\n")
+        print("\n🚀 Financial Metrics Extractor (FINAL STABLE)\n")
 
     def log(self, msg):
         print(f"[LOG] {msg}")
@@ -35,12 +35,20 @@ class FinancialExtractor:
     def clean_value(self, value):
         try:
             value = str(value).replace(",", "").replace("%", "").strip()
-            return float(value)
+            val = float(value)
+
+            # 🔥 FILTER BAD VALUES
+            if val < 1000:
+                return None
+            if val > 1e13:  # avoid corrupted huge values
+                return None
+
+            return val
         except:
             return None
 
     # -------------------------------
-    # 🔥 ULTRA STRONG BANGKOK EXTRACTION
+    # 🔥 SPECIAL BANGKOK HANDLER
     # -------------------------------
     def extract_bangkok(self, df):
 
@@ -52,7 +60,6 @@ class FinancialExtractor:
             return {}
 
         year = int(year_match.group(1))
-
         results[year] = {}
 
         # -------------------------------
@@ -68,52 +75,28 @@ class FinancialExtractor:
             match = re.search(pattern, text)
             if match:
                 value = self.clean_value(match.group(2))
-                if value and value > 1000:
+                if value:
                     results[year][metric] = value
                     self.log(f"Bangkok regex {metric} → {value}")
 
         # -------------------------------
-        # STEP 2: ROW SCAN
-        # -------------------------------
-        keyword_map = {
-            "net_profit": ["profit attributable", "net profit"],
-            "total_assets": ["total assets"]
-        }
-
-        for i, row in df.iterrows():
-
-            row_text = " ".join([str(x).lower() for x in row.values])
-
-            for metric, keywords in keyword_map.items():
-
-                if metric in results[year]:
-                    continue
-
-                if any(k in row_text for k in keywords):
-
-                    for val in row.values:
-                        value = self.clean_value(val)
-                        if value and value > 1000:
-                            results[year][metric] = value
-                            self.log(f"Bangkok row {metric} → {value}")
-                            break
-
-        # -------------------------------
-        # STEP 3: GLOBAL FALLBACK (NEW 🔥)
+        # STEP 2: SAFE FALLBACK
         # -------------------------------
         if "total_assets" not in results[year]:
 
-            all_numbers = []
+            candidates = []
 
             for val in df.values.flatten():
                 value = self.clean_value(val)
-                if value and value > 1_000_000:
-                    all_numbers.append(value)
 
-            if all_numbers:
-                max_val = max(all_numbers)
-                results[year]["total_assets"] = max_val
-                self.log(f"Bangkok fallback total_assets → {max_val}")
+                # realistic bank asset range
+                if value and 1e6 < value < 1e12:
+                    candidates.append(value)
+
+            if candidates:
+                best = max(candidates)
+                results[year]["total_assets"] = best
+                self.log(f"Bangkok fallback total_assets → {best}")
 
         return results
 
@@ -125,6 +108,7 @@ class FinancialExtractor:
 
         sheet_lower = sheet_name.lower()
 
+        # skip irrelevant sheets
         if any(x in sheet_lower for x in ["change", "equity", "cash", "cf"]):
             return {}
 
@@ -160,35 +144,37 @@ class FinancialExtractor:
 
         temp_store = {k: [] for k in keyword_map.keys()}
 
-        for i, row in df.iterrows():
+        rows = df.values
 
-            row_text = " ".join([str(x).lower() for x in row.values])
+        for i in range(len(rows)):
+
+            row_text = " ".join([str(x).lower() for x in rows[i]])
 
             for metric, keywords in keyword_map.items():
 
+                # revenue only from income sheets
                 if metric == "revenue" and not any(x in sheet_lower for x in ["income", "pl", "comprehensive"]):
                     continue
 
                 if any(k in row_text for k in keywords):
 
-                    for val in row.values:
-                        value = self.clean_value(val)
-                        if value and value > 1000:
-                            temp_store[metric].append(value)
-
-                    if i + 1 < len(df):
-                        next_row = df.iloc[i + 1]
-                        for val in next_row.values:
+                    # 🔥 search current + next row
+                    for r in [i, min(i+1, len(rows)-1)]:
+                        for val in rows[r]:
                             value = self.clean_value(val)
-                            if value and value > 1000:
+                            if value:
                                 temp_store[metric].append(value)
 
         final = {}
 
         for metric, values in temp_store.items():
             if values:
-                final[metric] = max(values)
-                self.log(f"{sheet_name}: FINAL {metric} → {final[metric]}")
+                # pick MOST REALISTIC (not always max)
+                values = sorted(values)
+                final_val = values[-1]
+
+                final[metric] = final_val
+                self.log(f"{sheet_name}: FINAL {metric} → {final_val}")
 
         return {year: final} if final else {}
 
