@@ -314,6 +314,18 @@ def init_db():
     PRIMARY KEY (bank_name, year, period_type)
     )
     """)
+    # ------------------------------
+    # EXTRACTION LOGS
+    # ------------------------------
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS extraction_logs (
+    bank_name TEXT,
+    year INTEGER,
+    issue TEXT,
+    severity TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+    """)
     # ==========================================
     # HUMAN FEEDBACK LOOP
     # ==========================================
