@@ -273,59 +273,48 @@ def init_db():
     )
     """)
 
-    # ------------------------------
-    # FINANCIAL FULL
-    # ------------------------------
     cursor.execute("""
-    CREATE TABLE IF NOT EXISTS financial_full (
-    bank_name TEXT,
-    year INTEGER,
-    period_type TEXT,
-
-    -- INCOME
-    interest_income REAL,
-    net_interest_income REAL,
-    fee_income REAL,
-    total_operating_income REAL,
-    operating_expenses REAL,
-    credit_loss REAL,
-    net_profit REAL,
-
-    -- BALANCE SHEET
-    total_assets REAL,
-    total_liabilities REAL,
-    total_equity REAL,
-    loans REAL,
-    deposits REAL,
-
-    -- CASH FLOW
-    operating_cashflow REAL,
-    investing_cashflow REAL,
-    financing_cashflow REAL,
-
-    -- RATIOS
-    roe REAL,
-    loan_to_deposit REAL,
-    cost_to_income REAL,
-    car REAL,
-    tier1_ratio REAL,
-    cet1_ratio REAL,
-
-    PRIMARY KEY (bank_name, year, period_type)
+    CREATE TABLE IF NOT EXISTS corporate_sentence_sentiment (
+        bank_name TEXT,
+        year INTEGER,
+        file_path TEXT,
+        sentence_index INTEGER,
+        page_number INTEGER,
+        sentence_text TEXT,
+        sentiment_label TEXT,
+        sentiment_score REAL,
+        signed_score REAL,
+        utterance_kind TEXT,
+        topic TEXT,
+        label TEXT,
+        PRIMARY KEY (bank_name, year, file_path, sentence_index)
     )
     """)
-    # ------------------------------
-    # EXTRACTION LOGS
-    # ------------------------------
+
     cursor.execute("""
-    CREATE TABLE IF NOT EXISTS extraction_logs (
-    bank_name TEXT,
-    year INTEGER,
-    issue TEXT,
-    severity TEXT,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    CREATE TABLE IF NOT EXISTS corporate_page_sentiment (
+        bank_name TEXT,
+        year INTEGER,
+        file_path TEXT,
+        page_number INTEGER,
+        mean_signed REAL,
+        sentence_count INTEGER,
+        label TEXT,
+        PRIMARY KEY (bank_name, year, file_path, page_number)
     )
     """)
+
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS corporate_document_sentiment_rollup (
+        bank_name TEXT,
+        year INTEGER,
+        file_path TEXT,
+        doc_mean_signed REAL,
+        label TEXT,
+        PRIMARY KEY (bank_name, year, file_path)
+    )
+    """)
+
     # ==========================================
     # HUMAN FEEDBACK LOOP
     # ==========================================
@@ -340,6 +329,95 @@ def init_db():
     """)
     conn.commit()
     conn.close()
+
+
+def delete_corporate_hierarchy_for_file(conn, bank_name, year, file_path):
+    cursor = conn.cursor()
+    cursor.execute(
+        """
+        DELETE FROM corporate_sentence_sentiment
+        WHERE bank_name=? AND year=? AND file_path=?
+        """,
+        (bank_name, year, file_path),
+    )
+    cursor.execute(
+        """
+        DELETE FROM corporate_page_sentiment
+        WHERE bank_name=? AND year=? AND file_path=?
+        """,
+        (bank_name, year, file_path),
+    )
+    cursor.execute(
+        """
+        DELETE FROM corporate_document_sentiment_rollup
+        WHERE bank_name=? AND year=? AND file_path=?
+        """,
+        (bank_name, year, file_path),
+    )
+
+
+def save_corporate_hierarchy_sentiment(conn, bank_name, year, file_path, result):
+    """result: dict with keys sentences, pages, document from CorporateSentimentAnalyzer.analyze_pages."""
+    delete_corporate_hierarchy_for_file(conn, bank_name, year, file_path)
+    cursor = conn.cursor()
+
+    for row in result["sentences"]:
+        cursor.execute(
+            """
+            INSERT INTO corporate_sentence_sentiment
+            (bank_name, year, file_path, sentence_index, page_number, sentence_text,
+             sentiment_label, sentiment_score, signed_score, utterance_kind, topic, label)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                bank_name,
+                year,
+                file_path,
+                row["sentence_index"],
+                row["page_number"],
+                row["sentence"],
+                row["sentiment_label"],
+                row["sentiment_score"],
+                row["signed_score"],
+                row["utterance_kind"],
+                row["topic"],
+                row.get("label"),
+            ),
+        )
+
+    for prow in result["pages"]:
+        cursor.execute(
+            """
+            INSERT INTO corporate_page_sentiment
+            (bank_name, year, file_path, page_number, mean_signed, sentence_count, label)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                bank_name,
+                year,
+                file_path,
+                prow["page_number"],
+                prow["mean_signed"],
+                prow["sentence_count"],
+                prow.get("label"),
+            ),
+        )
+
+    doc = result["document"]
+    cursor.execute(
+        """
+        INSERT INTO corporate_document_sentiment_rollup
+        (bank_name, year, file_path, doc_mean_signed, label)
+        VALUES (?, ?, ?, ?, ?)
+        """,
+        (
+            bank_name,
+            year,
+            file_path,
+            doc["doc_mean_signed"],
+            doc.get("label"),
+        ),
+    )
 
 
 # ==========================================

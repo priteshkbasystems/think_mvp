@@ -174,6 +174,29 @@ def extract_text_from_pdf(pdf_path):
         return ""
 
 
+def extract_pdf_pages(pdf_path):
+    """
+    Per-page text for sentence/page/document rollups (does not use pdf_text_cache
+    blob; reads PDF structure from disk).
+    """
+    try:
+        reader = PdfReader(pdf_path)
+        pages = []
+        for i, page in enumerate(reader.pages):
+            t = page.extract_text() or ""
+            if t.strip():
+                pages.append((i + 1, t))
+        full = "".join(p[1] for p in pages)
+        if len(full.strip()) < 100:
+            ocr = extract_text_with_ocr(pdf_path)
+            if ocr.strip():
+                return [(1, ocr)]
+            return []
+        return pages
+    except Exception:
+        return []
+
+
 # ==========================================
 # FILE CACHE CHECK
 # ==========================================

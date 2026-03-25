@@ -13,6 +13,7 @@ Pillow==10.3.0
 # NLP Basic
 nltk==3.8.1
 textblob==0.17.1
+pythainlp>=5.0.0
 
 # Transformers + Embeddings
 transformers==4.39.3

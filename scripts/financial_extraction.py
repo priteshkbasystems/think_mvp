@@ -3,281 +3,290 @@ import re
 import sqlite3
 import pandas as pd
 import sys
-import pdfplumber
 
 sys.path.insert(0, "/content/drive/MyDrive/THINK_MVP")
 
 DB_PATH = "/content/drive/MyDrive/THINK_MVP/04_Analysis_Output/transformation_cache.db"
 BASE_PATH = "/content/drive/MyDrive/THINK_MVP/01_Corporate_Documents"
 
-print("🔥 ENTERPRISE AI EXTRACTOR (SAFE + VALIDATION) LOADED 🔥")
+print("🔥 FINAL FINANCIAL EXTRACTOR (ABSOLUTE FINAL FIXED) LOADED 🔥")
 
 
 class FinancialExtractor:
 
     def __init__(self):
-        print("\n🚀 AI ENGINE WITH SAFE EXTRACTION + VALIDATION\n")
+        print("\n🚀 Financial Metrics Extractor (ABSOLUTE FINAL)\n")
 
-    # -------------------------------
-    def clean_value(self, v):
+    def log(self, msg):
+        print(f"[LOG] {msg}")
+
+    def warn(self, msg):
+        print(f"[WARNING] {msg}")
+
+    def normalize_name(self, name):
+        return name.lower().replace(" ", "").replace("_", "")
+
+    def find_bank_folder(self, bank_name):
+        for folder in os.listdir(BASE_PATH):
+            if self.normalize_name(folder) == self.normalize_name(bank_name):
+                return os.path.join(BASE_PATH, folder)
+        return None
+
+    def clean_value(self, value):
         try:
-            v = str(v).replace(",", "").replace("%", "").strip()
-            return float(v)
+            value = str(value).replace(",", "").replace("%", "").strip()
+            return float(value)
         except:
             return None
 
     # -------------------------------
-    def safe_get(self, df, row, col):
-        try:
-            if col < len(df.columns):
-                return self.clean_value(df.iloc[row, col])
-        except:
-            return None
-        return None
-
+    # 🔥 ULTRA STRONG BANGKOK EXTRACTION
     # -------------------------------
-    def get_row_value(self, df, i):
-        # try multiple columns (robust)
-        for col in range(1, min(6, len(df.columns))):
-            val = self.safe_get(df, i, col)
-            if val:
-                return val
-        return None
+    def extract_bangkok(self, df):
 
-    # -------------------------------
-    def log_issue(self, cursor, bank, year, msg, severity="warning"):
-        cursor.execute("""
-        INSERT INTO extraction_logs (bank_name, year, issue, severity)
-        VALUES (?, ?, ?, ?)
-        """, (bank, year, msg, severity))
+        results = {}
+        text = " ".join(df.astype(str).values.flatten()).lower()
 
-    # -------------------------------
-    def validate_data(self, data):
+        year_match = re.search(r"(20\d{2})", text)
+        if not year_match:
+            return {}
 
-        issues = []
-        score = 100
+        year = int(year_match.group(1))
 
-        if not data.get("total_assets"):
-            issues.append("Missing total_assets")
-            score -= 25
+        results[year] = {}
 
-        if not data.get("net_profit"):
-            issues.append("Missing net_profit")
-            score -= 25
+        # -------------------------------
+        # STEP 1: REGEX
+        # -------------------------------
+        patterns = {
+            "revenue": r"(net interest income|total operating income)[^0-9]{0,50}([\d,]+)",
+            "net_profit": r"(profit attributable|net profit)[^0-9]{0,50}([\d,]+)",
+            "total_assets": r"(total assets)[^0-9]{0,50}([\d,]+)"
+        }
 
-        if not data.get("total_operating_income"):
-            issues.append("Missing revenue")
-            score -= 20
+        for metric, pattern in patterns.items():
+            match = re.search(pattern, text)
+            if match:
+                value = self.clean_value(match.group(2))
+                if value and value > 1000:
+                    results[year][metric] = value
+                    self.log(f"Bangkok regex {metric} → {value}")
 
-        if data.get("total_assets") and data.get("total_equity"):
-            if data["total_equity"] > data["total_assets"]:
-                issues.append("Equity > Assets")
-                score -= 20
+        # -------------------------------
+        # STEP 2: ROW SCAN
+        # -------------------------------
+        keyword_map = {
+            "net_profit": ["profit attributable", "net profit"],
+            "total_assets": ["total assets"]
+        }
 
-        for k, v in data.items():
-            if isinstance(v, (int, float)) and v < 0 and k != "credit_loss":
-                issues.append(f"Negative {k}")
-                score -= 10
+        for i, row in df.iterrows():
 
-        return issues, max(score, 0)
+            row_text = " ".join([str(x).lower() for x in row.values])
 
-    # -------------------------------
-    def detect_period(self, text):
-        text = text.lower()
+            for metric, keywords in keyword_map.items():
 
-        if "for the year ended" in text or "31 december" in text:
-            return "annual"
-        if "nine months" in text:
-            return "9M"
-        if "six months" in text:
-            return "H1"
-        if "three months" in text:
-            return "Q1"
-
-        return "unknown"
-
-    # -------------------------------
-    def extract_tables(self, pdf_path):
-        tables = []
-        with pdfplumber.open(pdf_path) as pdf:
-            for page in pdf.pages:
-                for t in page.extract_tables():
-                    tables.append(pd.DataFrame(t))
-        return tables
-
-    # -------------------------------
-    def extract_all(self, pdf_path):
-
-        tables = self.extract_tables(pdf_path)
-
-        text = ""
-        with pdfplumber.open(pdf_path) as pdf:
-            for p in pdf.pages:
-                t = p.extract_text()
-                if t:
-                    text += t.lower()
-
-        d = {}
-
-        for df in tables:
-
-            # skip weak tables
-            if len(df.columns) < 2:
-                continue
-
-            for i in range(len(df)):
-                row = " ".join(df.iloc[i].astype(str)).lower()
-                val = self.get_row_value(df, i)
-
-                if not val:
+                if metric in results[year]:
                     continue
 
-                if "total assets" in row:
-                    d["total_assets"] = val
-                elif "total liabilities" in row:
-                    d["total_liabilities"] = val
-                elif "total equity" in row:
-                    d["total_equity"] = val
-                elif "interest income" in row:
-                    d["interest_income"] = val
-                elif "net interest income" in row:
-                    d["net_interest_income"] = val
-                elif "total operating income" in row:
-                    d["total_operating_income"] = val
-                elif "expenses" in row:
-                    d["operating_expenses"] = val
-                elif "credit loss" in row:
-                    d["credit_loss"] = val
-                elif "profit" in row:
-                    d["net_profit"] = val
-                elif "loans" in row:
-                    d["loans"] = val
-                elif "deposits" in row:
-                    d["deposits"] = val
+                if any(k in row_text for k in keywords):
+
+                    for val in row.values:
+                        value = self.clean_value(val)
+                        if value and value > 1000:
+                            results[year][metric] = value
+                            self.log(f"Bangkok row {metric} → {value}")
+                            break
 
         # -------------------------------
-        # COMPUTE RATIOS
+        # STEP 3: GLOBAL FALLBACK (NEW 🔥)
         # -------------------------------
-        if d.get("net_profit") and d.get("total_equity"):
-            d["roe"] = round((d["net_profit"] / d["total_equity"]) * 100, 2)
+        if "total_assets" not in results[year]:
 
-        if d.get("loans") and d.get("deposits"):
-            d["loan_to_deposit"] = round(d["loans"] / d["deposits"], 2)
+            all_numbers = []
 
-        if d.get("operating_expenses") and d.get("total_operating_income"):
-            d["cost_to_income"] = round(
-                d["operating_expenses"] / d["total_operating_income"], 2
-            )
+            for val in df.values.flatten():
+                value = self.clean_value(val)
+                if value and value > 1_000_000:
+                    all_numbers.append(value)
 
-        return d, text
+            if all_numbers:
+                max_val = max(all_numbers)
+                results[year]["total_assets"] = max_val
+                self.log(f"Bangkok fallback total_assets → {max_val}")
+
+        return results
 
     # -------------------------------
-    def merge_year(self, pdata):
-        priority = ["annual", "9M", "H1", "Q1"]
+    def extract_from_df(self, df, sheet_name):
+
+        if df.empty:
+            return {}
+
+        sheet_lower = sheet_name.lower()
+
+        if any(x in sheet_lower for x in ["change", "equity", "cash", "cf"]):
+            return {}
+
+        full_text = " ".join(df.astype(str).values.flatten()).lower()
+
+        year_match = re.search(r"(20\d{2})", full_text)
+        if not year_match:
+            return {}
+
+        year = int(year_match.group(1))
+        self.log(f"{sheet_name}: Year → {year}")
+
+        keyword_map = {
+            "revenue": [
+                "total operating income",
+                "total income",
+                "interest income",
+                "net interest income"
+            ],
+            "net_profit": [
+                "net profit",
+                "profit for the year",
+                "profit attributable"
+            ],
+            "operating_income": [
+                "profit before tax",
+                "profit before income tax"
+            ],
+            "total_assets": [
+                "total assets"
+            ]
+        }
+
+        temp_store = {k: [] for k in keyword_map.keys()}
+
+        for i, row in df.iterrows():
+
+            row_text = " ".join([str(x).lower() for x in row.values])
+
+            for metric, keywords in keyword_map.items():
+
+                if metric == "revenue" and not any(x in sheet_lower for x in ["income", "pl", "comprehensive"]):
+                    continue
+
+                if any(k in row_text for k in keywords):
+
+                    for val in row.values:
+                        value = self.clean_value(val)
+                        if value and value > 1000:
+                            temp_store[metric].append(value)
+
+                    if i + 1 < len(df):
+                        next_row = df.iloc[i + 1]
+                        for val in next_row.values:
+                            value = self.clean_value(val)
+                            if value and value > 1000:
+                                temp_store[metric].append(value)
 
         final = {}
-        for p in priority:
-            if p in pdata:
-                for k, v in pdata[p].items():
-                    if v and k not in final:
-                        final[k] = v
-        return final
+
+        for metric, values in temp_store.items():
+            if values:
+                final[metric] = max(values)
+                self.log(f"{sheet_name}: FINAL {metric} → {final[metric]}")
+
+        return {year: final} if final else {}
+
+    # -------------------------------
+    def process_excel(self, file_path):
+
+        self.log(f"\n📄 Processing: {file_path}")
+
+        try:
+            if "bangkok" in file_path.lower():
+                df = pd.concat(pd.read_excel(file_path, sheet_name=None).values())
+                return self.extract_bangkok(df)
+
+            all_results = {}
+
+            xls = pd.ExcelFile(file_path)
+
+            for sheet in xls.sheet_names:
+                df = xls.parse(sheet)
+
+                extracted = self.extract_from_df(df, sheet)
+
+                for year, metrics in extracted.items():
+                    all_results.setdefault(year, {})
+                    all_results[year].update(metrics)
+
+            return all_results
+
+        except Exception as e:
+            self.warn(f"File error: {e}")
+            return {}
 
     # -------------------------------
     def run(self):
 
+        print("\n🚀 STARTING EXTRACTION\n")
+
         conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
 
-        banks = cursor.execute("SELECT bank_name FROM banks").fetchall()
+        cursor.execute("SELECT bank_name FROM banks")
+        banks = cursor.fetchall()
+
+        print(f"📊 Banks: {banks}")
 
         for (bank,) in banks:
 
-            base = os.path.join(BASE_PATH, bank, "financial_report")
-            if not os.path.exists(base):
+            print(f"\n🏦 {bank}")
+
+            bank_folder = self.find_bank_folder(bank)
+
+            if not bank_folder:
+                self.warn("Bank folder not found")
                 continue
 
-            for year_folder in os.listdir(base):
+            path = os.path.join(bank_folder, "financial_report")
 
-                if not year_folder.isdigit():
-                    continue
+            if not os.path.exists(path):
+                self.warn("financial_report missing")
+                continue
 
-                year = int(year_folder)
-                year_path = os.path.join(base, year_folder)
+            files = os.listdir(path)
 
-                pdata = {}
+            excel_files = [
+                f for f in files
+                if f.lower().endswith((".xlsx", ".xls")) and not f.startswith("~$")
+            ]
 
-                for file in os.listdir(year_path):
+            print(f"📄 Files: {excel_files}")
 
-                    if not file.endswith(".pdf"):
-                        continue
+            for file in excel_files:
 
-                    file_path = os.path.join(year_path, file)
+                file_path = os.path.join(path, file)
 
-                    print(f"📄 {bank} | {year} | {file}")
+                results = self.process_excel(file_path)
 
-                    data, text = self.extract_all(file_path)
+                for year, metrics in results.items():
 
-                    period = self.detect_period(text)
+                    print(f"💾 Saving → {bank} | {year} | {metrics}")
 
-                    if period == "unknown":
-                        self.log_issue(cursor, bank, year, f"Unknown period: {file}")
-                        continue
-
-                    pdata[period] = data
-
-                final = self.merge_year(pdata)
-
-                issues, score = self.validate_data(final)
-
-                print(f"💾 FINAL ({score}% confidence) → {final}")
-
-                for issue in issues:
-                    self.log_issue(cursor, bank, year, issue)
-
-                if score < 40:
-                    print("❌ Skipping low confidence")
-                    continue
-
-                cursor.execute("""
-                INSERT OR REPLACE INTO financial_full (
-                    bank_name, year, period_type,
-                    interest_income, net_interest_income, fee_income,
-                    total_operating_income, operating_expenses, credit_loss, net_profit,
-                    total_assets, total_liabilities, total_equity, loans, deposits,
-                    operating_cashflow, investing_cashflow, financing_cashflow,
-                    roe, loan_to_deposit, cost_to_income, car, tier1_ratio, cet1_ratio
-                )
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-                """, (
-                    bank, year, "final",
-                    final.get("interest_income"),
-                    final.get("net_interest_income"),
-                    final.get("fee_income"),
-                    final.get("total_operating_income"),
-                    final.get("operating_expenses"),
-                    final.get("credit_loss"),
-                    final.get("net_profit"),
-                    final.get("total_assets"),
-                    final.get("total_liabilities"),
-                    final.get("total_equity"),
-                    final.get("loans"),
-                    final.get("deposits"),
-                    final.get("operating_cashflow"),
-                    final.get("investing_cashflow"),
-                    final.get("financing_cashflow"),
-                    final.get("roe"),
-                    final.get("loan_to_deposit"),
-                    final.get("cost_to_income"),
-                    final.get("car"),
-                    final.get("tier1_ratio"),
-                    final.get("cet1_ratio")
-                ))
+                    cursor.execute("""
+                    INSERT OR REPLACE INTO financial_metrics
+                    (bank_name, year, revenue, net_profit, operating_income, total_assets, roe)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """, (
+                        bank,
+                        year,
+                        metrics.get("revenue"),
+                        metrics.get("net_profit"),
+                        metrics.get("operating_income"),
+                        metrics.get("total_assets"),
+                        metrics.get("roe")
+                    ))
 
         conn.commit()
         conn.close()
 
-        print("\n✅ DONE (NO CRASH, FULL SAFE MODE)\n")
+        print("\n✅ DONE\n")
 
 
 def main():

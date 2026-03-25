@@ -2,11 +2,13 @@ import os
 import re
 
 from scripts.corporate_topic_sentiment import CorporateTopicSentiment
-from scripts.transformation_correlation import extract_text_from_pdf
+from scripts.corporate_sentiment_analyzer import CorporateSentimentAnalyzer
+from scripts.transformation_correlation import extract_text_from_pdf, extract_pdf_pages
 from scripts.db_cache import (
     save_corporate_topic_sentiment,
+    save_corporate_hierarchy_sentiment,
     get_cached_pdf_text,
-    save_pdf_text
+    save_pdf_text,
 )
 
 import sqlite3
@@ -65,6 +67,7 @@ def update_topic_cache(cursor, file_path, last_modified):
 def main():
 
     analyzer = CorporateTopicSentiment()
+    corp_analyzer = CorporateSentimentAnalyzer()
 
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
@@ -103,21 +106,28 @@ def main():
                 print("📄 Processing:", file)
 
                 # 🔥 USE TEXT CACHE
-                text = get_cached_pdf_text(path)
+                full_text = get_cached_pdf_text(path)
 
-                if not text:
-                    text = extract_text_from_pdf(path)
-                    save_pdf_text(path, text)
+                if not full_text:
+                    full_text = extract_text_from_pdf(path)
+                    save_pdf_text(path, full_text)
 
-                if not text:
+                if not full_text:
                     continue
 
-                # 🔥 OPTIONAL SPEED BOOST
-                text = text[:5000]
+                text = full_text[:5000]
 
                 topic_scores = analyzer.analyze(text)
 
                 save_corporate_topic_sentiment(bank, year, topic_scores)
+
+                pages = extract_pdf_pages(path)
+                if not pages and full_text.strip():
+                    pages = [(1, full_text)]
+
+                if pages:
+                    hierarchy = corp_analyzer.analyze_pages(pages)
+                    save_corporate_hierarchy_sentiment(conn, bank, year, path, hierarchy)
 
                 update_topic_cache(cursor, path, last_modified)
 
