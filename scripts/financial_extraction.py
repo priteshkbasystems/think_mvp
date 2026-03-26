@@ -145,8 +145,16 @@ class FinancialExtractor:
 
     @staticmethod
     def is_financial_report_pdf(file_path):
-        norm = (file_path or "").replace("\\", "/").lower()
-        return "/financial_report/" in norm
+        norm = (file_path or "").replace("\\", "/").strip("/")
+        parts = [p.lower() for p in norm.split("/") if p]
+        if len(parts) < 2:
+            return False
+        # strict: immediate parent folder must be exactly "financial_report"
+        if parts[-2] != "financial_report":
+            return False
+        # extra safety: reject known non-target folders anywhere in path
+        blocked = {"annual_reports", "investor_presentations", "reviews", "stock_price"}
+        return not any(p in blocked for p in parts)
 
     @staticmethod
     def infer_period(file_path):
