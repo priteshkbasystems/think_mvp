@@ -2,6 +2,7 @@ import os
 import re
 import sqlite3
 import time
+import json
 from decimal import Decimal, InvalidOperation
 
 import pdfplumber
@@ -114,6 +115,36 @@ class FinancialExtractor:
         return None
 
     @staticmethod
+    def detect_currency_and_unit(text):
+        t = (text or "").lower()
+        currency = None
+        unit_multiplier = 1
+
+        if "baht" in t or "thb" in t:
+            currency = "THB"
+        elif "usd" in t or "$" in t:
+            currency = "USD"
+        elif "eur" in t:
+            currency = "EUR"
+
+        if re.search(r"billion\s+baht", t):
+            unit_multiplier = 1_000_000_000
+        elif re.search(r"million\s+baht", t):
+            unit_multiplier = 1_000_000
+        elif re.search(r"thousand\s+baht|baht\s*[:']\s*'?\s*000|baht\s*/\s*'?\s*000", t):
+            unit_multiplier = 1_000
+
+        return currency, unit_multiplier
+
+    def apply_unit_multiplier(self, value_str, unit_multiplier):
+        if value_str is None:
+            return None
+        d = self.to_decimal(value_str)
+        if d is None:
+            return None
+        return self.normalize_numeric_string(d * Decimal(unit_multiplier))
+
+    @staticmethod
     def has_keyword(line_lower, keyword):
         escaped = re.escape(keyword.lower())
         pattern = r"(?<![a-z0-9])" + escaped + r"(?![a-z0-9])"
@@ -127,6 +158,8 @@ class FinancialExtractor:
             "total_assets": None,
             "roe": None,
             "total_equity": None,
+            "currency": None,
+            "unit_multiplier": 1,
         }
 
         with pdfplumber.open(pdf_path) as pdf:
@@ -134,6 +167,12 @@ class FinancialExtractor:
                 text = page.extract_text()
                 if not text:
                     continue
+                if results["currency"] is None or results["unit_multiplier"] == 1:
+                    ccy, unit = self.detect_currency_and_unit(text)
+                    if results["currency"] is None and ccy is not None:
+                        results["currency"] = ccy
+                    if unit != 1:
+                        results["unit_multiplier"] = unit
                 lines = text.split("\n")
 
                 for idx, line in enumerate(lines):
@@ -167,6 +206,10 @@ class FinancialExtractor:
 
                 if all(results[k] is not None for k in ("net_profit", "total_assets")):
                     break
+
+        # normalize monetary values by detected report unit
+        for k in ("revenue", "net_profit", "operating_income", "total_assets", "total_equity"):
+            results[k] = self.apply_unit_multiplier(results.get(k), results["unit_multiplier"])
 
         if results["roe"] is None:
             np_val = self.to_decimal(results.get("net_profit"))
@@ -277,6 +320,8 @@ class FinancialExtractor:
                 year INTEGER,
                 period_type TEXT,
                 period_label TEXT,
+                currency TEXT,
+                unit_multiplier INTEGER,
                 revenue TEXT,
                 net_profit TEXT,
                 operating_income TEXT,
@@ -287,6 +332,20 @@ class FinancialExtractor:
             )
             """
         )
+        # lightweight migrations for existing DBs
+        cursor.execute("PRAGMA table_info(financial_metrics_periodic)")
+        periodic_cols = {row[1] for row in cursor.fetchall()}
+        if "currency" not in periodic_cols:
+            cursor.execute("ALTER TABLE financial_metrics_periodic ADD COLUMN currency TEXT")
+        if "unit_multiplier" not in periodic_cols:
+            cursor.execute("ALTER TABLE financial_metrics_periodic ADD COLUMN unit_multiplier INTEGER")
+
+        cursor.execute("PRAGMA table_info(financial_metrics)")
+        annual_cols = {row[1] for row in cursor.fetchall()}
+        if "currency" not in annual_cols:
+            cursor.execute("ALTER TABLE financial_metrics ADD COLUMN currency TEXT")
+        if "unit_multiplier" not in annual_cols:
+            cursor.execute("ALTER TABLE financial_metrics ADD COLUMN unit_multiplier INTEGER")
 
         rows = self.list_financial_report_pdfs()
 
@@ -311,7 +370,22 @@ class FinancialExtractor:
                 skipped += 1
                 continue
 
-            print(f"[PARSED] {metrics}")
+            print(
+                json.dumps(
+                    {
+                        "bank_name": bank_name,
+                        "currency": metrics.get("currency"),
+                        "unit_multiplier": metrics.get("unit_multiplier"),
+                        "metrics": {
+                            "Total Operating Income": metrics.get("operating_income"),
+                            "Net Profit": metrics.get("net_profit"),
+                            "Total Assets": metrics.get("total_assets"),
+                            "ROE (%)": metrics.get("roe"),
+                        },
+                    },
+                    ensure_ascii=True,
+                )
+            )
 
             if not any(metrics.values()):
                 print("[SKIP] No financial metric found in this PDF.")
@@ -322,14 +396,16 @@ class FinancialExtractor:
             cursor.execute(
                 """
                 INSERT OR REPLACE INTO financial_metrics_periodic
-                (bank_name, year, period_type, period_label, revenue, net_profit, operating_income, total_assets, roe, source_file_path)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                (bank_name, year, period_type, period_label, currency, unit_multiplier, revenue, net_profit, operating_income, total_assets, roe, source_file_path)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     bank_name,
                     int(year),
                     period_type,
                     period_label,
+                    metrics.get("currency"),
+                    metrics.get("unit_multiplier"),
                     metrics.get("revenue"),
                     metrics.get("net_profit"),
                     metrics.get("operating_income"),
@@ -346,12 +422,14 @@ class FinancialExtractor:
                 cursor.execute(
                     """
                     INSERT OR REPLACE INTO financial_metrics
-                    (bank_name, year, revenue, net_profit, operating_income, total_assets, roe)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    (bank_name, year, currency, unit_multiplier, revenue, net_profit, operating_income, total_assets, roe)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         bank_name,
                         int(year),
+                        metrics.get("currency"),
+                        metrics.get("unit_multiplier"),
                         metrics.get("revenue"),
                         metrics.get("net_profit"),
                         metrics.get("operating_income"),
