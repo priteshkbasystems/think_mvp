@@ -121,7 +121,7 @@ class FinancialExtractor:
                     continue
                 lines = text.split("\n")
 
-                for line in lines:
+                for idx, line in enumerate(lines):
                     line_lower = line.lower()
 
                     for metric_key, keywords in self.LABELS.items():
@@ -131,12 +131,20 @@ class FinancialExtractor:
                             continue
 
                         if metric_key == "roe":
-                            match = re.search(r"(\d+\.\d+|\d+)", line)
-                            if match:
-                                roe_val = self.normalize_numeric_string(match.group(1))
+                            next_line = lines[idx + 1] if idx + 1 < len(lines) else ""
+                            prev_line = lines[idx - 1] if idx - 1 >= 0 else ""
+                            roe_text = f"{prev_line} {line} {next_line}"
+
+                            # Prefer explicit percentages first.
+                            percent_matches = re.findall(r"(\d{1,3}(?:\.\d+)?)\s*%", roe_text)
+                            candidates = percent_matches or re.findall(r"(\d{1,3}(?:\.\d+)?)", roe_text)
+
+                            for c in candidates:
+                                roe_val = self.normalize_numeric_string(c)
                                 d = self.to_decimal(roe_val)
-                                if d is not None and Decimal("0") <= d <= Decimal("100"):
+                                if d is not None and Decimal("0") < d <= Decimal("100"):
                                     results[metric_key] = roe_val
+                                    break
                         else:
                             val = self.get_latest_value(line, metric_key)
                             if val is not None:
