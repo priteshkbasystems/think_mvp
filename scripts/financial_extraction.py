@@ -143,12 +143,56 @@ class FinancialExtractor:
             return parts[-3].replace("_", " ")
         return "unknown_bank"
 
+    @staticmethod
+    def is_financial_report_pdf(file_path):
+        norm = (file_path or "").replace("\\", "/").lower()
+        return "/financial_report/" in norm
+
+    @staticmethod
+    def infer_period(file_path):
+        """
+        Returns: (period_type, period_label)
+        period_type: annual | quarterly
+        period_label: FY / Q1 / Q2 / Q3 / Q4
+        """
+        name = ((file_path or "").replace("\\", "/").split("/")[-1]).lower()
+
+        if re.search(r"\bq1\b|quarter\s*1|1q|1st\s*quarter", name):
+            return "quarterly", "Q1"
+        if re.search(r"\bq2\b|quarter\s*2|2q|2nd\s*quarter", name):
+            return "quarterly", "Q2"
+        if re.search(r"\bq3\b|quarter\s*3|3q|3rd\s*quarter", name):
+            return "quarterly", "Q3"
+        if re.search(r"\bq4\b|quarter\s*4|4q|4th\s*quarter", name):
+            return "quarterly", "Q4"
+
+        return "annual", "FY"
+
     def run(self):
         print("\nStarting direct PDF financial extraction\n")
         init_db()
 
         conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
+
+        # Keep quarterly rows separately so they don't overwrite annual by (bank_name, year) PK.
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS financial_metrics_periodic (
+                bank_name TEXT,
+                year INTEGER,
+                period_type TEXT,
+                period_label TEXT,
+                revenue TEXT,
+                net_profit TEXT,
+                operating_income TEXT,
+                total_assets TEXT,
+                roe TEXT,
+                source_file_path TEXT,
+                PRIMARY KEY(bank_name, year, period_type, period_label)
+            )
+            """
+        )
 
         cursor.execute(
             """
@@ -168,11 +212,16 @@ class FinancialExtractor:
         print(f"[INFO] PDF files to process: {len(rows)}")
 
         saved = 0
+        saved_periodic = 0
         skipped = 0
 
         for file_path, year in rows:
+            if not self.is_financial_report_pdf(file_path):
+                continue
+
             bank_name = self.infer_bank_name(file_path)
-            print(f"\n[PDF] {bank_name} | {year} | {file_path}")
+            period_type, period_label = self.infer_period(file_path)
+            print(f"\n[PDF] {bank_name} | {year} | {period_label} | {file_path}")
 
             try:
                 metrics = self.extract_financials(file_path)
@@ -188,30 +237,56 @@ class FinancialExtractor:
                 skipped += 1
                 continue
 
+            # Always keep period-specific record (annual + quarterly)
             cursor.execute(
                 """
-                INSERT OR REPLACE INTO financial_metrics
-                (bank_name, year, revenue, net_profit, operating_income, total_assets, roe)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                INSERT OR REPLACE INTO financial_metrics_periodic
+                (bank_name, year, period_type, period_label, revenue, net_profit, operating_income, total_assets, roe, source_file_path)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     bank_name,
                     int(year),
+                    period_type,
+                    period_label,
                     metrics.get("revenue"),
                     metrics.get("net_profit"),
                     metrics.get("operating_income"),
                     metrics.get("total_assets"),
                     metrics.get("roe"),
+                    file_path,
                 ),
             )
-            saved += 1
-            print("[DB] Upserted into financial_metrics")
+            saved_periodic += 1
+            print("[DB] Upserted into financial_metrics_periodic")
+
+            # Keep existing table behavior for annual only
+            if period_type == "annual":
+                cursor.execute(
+                    """
+                    INSERT OR REPLACE INTO financial_metrics
+                    (bank_name, year, revenue, net_profit, operating_income, total_assets, roe)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        bank_name,
+                        int(year),
+                        metrics.get("revenue"),
+                        metrics.get("net_profit"),
+                        metrics.get("operating_income"),
+                        metrics.get("total_assets"),
+                        metrics.get("roe"),
+                    ),
+                )
+                saved += 1
+                print("[DB] Upserted into financial_metrics (annual)")
 
         conn.commit()
         conn.close()
 
         print("\n--- Summary ---")
-        print(f"[SUMMARY] Upserted rows: {saved}")
+        print(f"[SUMMARY] Upserted annual rows (financial_metrics): {saved}")
+        print(f"[SUMMARY] Upserted periodic rows (financial_metrics_periodic): {saved_periodic}")
         print(f"[SUMMARY] Skipped files: {skipped}")
 
 
