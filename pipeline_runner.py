@@ -101,17 +101,6 @@ run_step("STEP 3 — TRANSFORMATION INTELLIGENCE", step3)
 
 
 # ==========================================
-# STEP 3.5 — FINANCIAL METRICS EXTRACTION
-# ==========================================
-
-def step35():
-
-    from scripts.financial_extraction_pipeline import main
-
-    main()
-
-run_step("STEP 3.5 — FINANCIAL METRICS EXTRACTION", step35)
-# ==========================================
 # STEP 4 — CORPORATE TOPIC SENTIMENT
 # ==========================================
 
@@ -504,6 +493,18 @@ def step27():
     engine.run()
 
 run_step("STEP 27 — TOPIC MAPPING", step27)
+
+# ==========================================
+# STEP 28 — FINANCIAL METRICS EXTRACTION
+# ==========================================
+
+def step28():
+
+    from scripts.financial_extraction_pipeline import main
+
+    main()
+
+run_step("STEP 28 — FINANCIAL METRICS EXTRACTION", step28)
 # ==========================================
 # PIPELINE FINISHED
 # ==========================================
