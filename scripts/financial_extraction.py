@@ -200,19 +200,20 @@ class FinancialExtractor:
                 continue
 
             bank_name = bank_folder.replace("_", " ")
-            for file_name in sorted(os.listdir(fin_path)):
-                if not file_name.lower().endswith(".pdf"):
-                    continue
-                if file_name.startswith("~$"):
-                    continue
+            for root, _, files in os.walk(fin_path):
+                for file_name in sorted(files):
+                    if not file_name.lower().endswith(".pdf"):
+                        continue
+                    if file_name.startswith("~$"):
+                        continue
 
-                year = self.infer_year(file_name)
-                if year is None:
-                    continue
+                    rel_path = os.path.join(root, file_name)
+                    year = self.infer_year(file_name) or self.infer_year(rel_path)
+                    if year is None:
+                        continue
 
-                full_path = os.path.join(fin_path, file_name)
-                period_type, period_label = self.infer_period(file_name)
-                rows.append((bank_name, year, period_type, period_label, full_path))
+                    period_type, period_label = self.infer_period(file_name)
+                    rows.append((bank_name, year, period_type, period_label, rel_path))
 
         return rows
 
