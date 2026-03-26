@@ -15,8 +15,17 @@ class FinancialExtractor:
     METRIC_KEYS = ("revenue", "net_profit", "operating_income", "total_assets", "roe")
 
     LABELS = {
+        "revenue": [
+            "total operating income - net",
+            "total operating income",
+            "total operating revenue",
+            "total revenue",
+            "total income",
+            "operating income",
+        ],
         "operating_income": [
             "total operating income",
+            "total operating income - net",
             "operating income",
             "total income",
         ],
@@ -133,8 +142,11 @@ class FinancialExtractor:
                             if val is not None:
                                 results[metric_key] = val
 
-                if all(results[k] is not None for k in ("operating_income", "net_profit", "total_assets")):
+                if all(results[k] is not None for k in ("net_profit", "total_assets")):
                     break
+
+        if results["revenue"] is None and results["operating_income"] is not None:
+            results["revenue"] = results["operating_income"]
 
         return results
 
