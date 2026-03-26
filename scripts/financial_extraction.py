@@ -1,3 +1,4 @@
+import os
 import re
 import sqlite3
 from decimal import Decimal, InvalidOperation
@@ -7,6 +8,7 @@ import pdfplumber
 from scripts.db_cache import init_db
 
 DB_PATH = "/content/drive/MyDrive/THINK_MVP/04_Analysis_Output/transformation_cache.db"
+BASE_CORP_PATH = "/content/drive/MyDrive/THINK_MVP/01_Corporate_Documents"
 
 
 class FinancialExtractor:
@@ -176,6 +178,44 @@ class FinancialExtractor:
 
         return "annual", "FY"
 
+    @staticmethod
+    def infer_year(file_name):
+        match = re.search(r"(20\d{2})", file_name or "")
+        if match:
+            return int(match.group(1))
+        return None
+
+    def list_financial_report_pdfs(self):
+        rows = []
+        if not os.path.isdir(BASE_CORP_PATH):
+            return rows
+
+        for bank_folder in sorted(os.listdir(BASE_CORP_PATH)):
+            bank_path = os.path.join(BASE_CORP_PATH, bank_folder)
+            if not os.path.isdir(bank_path):
+                continue
+
+            fin_path = os.path.join(bank_path, "financial_report")
+            if not os.path.isdir(fin_path):
+                continue
+
+            bank_name = bank_folder.replace("_", " ")
+            for file_name in sorted(os.listdir(fin_path)):
+                if not file_name.lower().endswith(".pdf"):
+                    continue
+                if file_name.startswith("~$"):
+                    continue
+
+                year = self.infer_year(file_name)
+                if year is None:
+                    continue
+
+                full_path = os.path.join(fin_path, file_name)
+                period_type, period_label = self.infer_period(file_name)
+                rows.append((bank_name, year, period_type, period_label, full_path))
+
+        return rows
+
     def run(self):
         print("\nStarting direct PDF financial extraction\n")
         init_db()
@@ -202,33 +242,20 @@ class FinancialExtractor:
             """
         )
 
-        cursor.execute(
-            """
-            SELECT file_path, year
-            FROM pdf_cache
-            WHERE file_path IS NOT NULL
-              AND TRIM(file_path) != ''
-            """
-        )
-        rows = cursor.fetchall()
+        rows = self.list_financial_report_pdfs()
 
         if not rows:
-            print("[INFO] No rows in pdf_cache.")
+            print("[INFO] No PDFs found under */financial_report folders.")
             conn.close()
             return
 
-        print(f"[INFO] PDF files to process: {len(rows)}")
+        print(f"[INFO] financial_report PDFs to process: {len(rows)}")
 
         saved = 0
         saved_periodic = 0
         skipped = 0
 
-        for file_path, year in rows:
-            if not self.is_financial_report_pdf(file_path):
-                continue
-
-            bank_name = self.infer_bank_name(file_path)
-            period_type, period_label = self.infer_period(file_path)
+        for bank_name, year, period_type, period_label, file_path in rows:
             print(f"\n[PDF] {bank_name} | {year} | {period_label} | {file_path}")
 
             try:
