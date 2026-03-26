@@ -43,6 +43,13 @@ class FinancialExtractor:
             "return on equity",
             "roe",
         ],
+        "total_equity": [
+            "total equity",
+            "shareholders’ equity",
+            "shareholders' equity",
+            "equity attributable to owners",
+            "equity attributable to equity holders",
+        ],
     }
 
     def __init__(self):
@@ -105,6 +112,12 @@ class FinancialExtractor:
             return self.normalize_numeric_string(filtered[0])
         return None
 
+    @staticmethod
+    def has_keyword(line_lower, keyword):
+        escaped = re.escape(keyword.lower())
+        pattern = r"(?<![a-z0-9])" + escaped + r"(?![a-z0-9])"
+        return re.search(pattern, line_lower) is not None
+
     def extract_financials(self, pdf_path):
         results = {
             "revenue": None,
@@ -112,6 +125,7 @@ class FinancialExtractor:
             "operating_income": None,
             "total_assets": None,
             "roe": None,
+            "total_equity": None,
         }
 
         with pdfplumber.open(pdf_path) as pdf:
@@ -127,7 +141,7 @@ class FinancialExtractor:
                     for metric_key, keywords in self.LABELS.items():
                         if results[metric_key] is not None:
                             continue
-                        if not any(k in line_lower for k in keywords):
+                        if not any(self.has_keyword(line_lower, k) for k in keywords):
                             continue
 
                         if metric_key == "roe":
@@ -152,6 +166,13 @@ class FinancialExtractor:
 
                 if all(results[k] is not None for k in ("net_profit", "total_assets")):
                     break
+
+        if results["roe"] is None:
+            np_val = self.to_decimal(results.get("net_profit"))
+            eq_val = self.to_decimal(results.get("total_equity"))
+            if np_val is not None and eq_val is not None and eq_val != 0:
+                roe_calc = (np_val / eq_val) * Decimal("100")
+                results["roe"] = self.normalize_numeric_string(roe_calc.quantize(Decimal("0.01")))
 
         if results["revenue"] is None and results["operating_income"] is not None:
             results["revenue"] = results["operating_income"]
