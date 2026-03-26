@@ -1,6 +1,7 @@
 import os
 import re
 import sqlite3
+import time
 from decimal import Decimal, InvalidOperation
 
 import pdfplumber
@@ -262,8 +263,11 @@ class FinancialExtractor:
         print("\nStarting direct PDF financial extraction\n")
         init_db()
 
-        conn = sqlite3.connect(DB_PATH)
+        conn = sqlite3.connect(DB_PATH, timeout=60)
         cursor = conn.cursor()
+        cursor.execute("PRAGMA busy_timeout = 60000")
+        cursor.execute("PRAGMA journal_mode = DELETE")
+        cursor.execute("PRAGMA synchronous = NORMAL")
 
         # Keep quarterly rows separately so they don't overwrite annual by (bank_name, year) PK.
         cursor.execute(
@@ -358,8 +362,23 @@ class FinancialExtractor:
                 saved += 1
                 print("[DB] Upserted into financial_metrics (annual)")
 
-        conn.commit()
+        commit_ok = False
+        for attempt in range(1, 6):
+            try:
+                conn.commit()
+                commit_ok = True
+                break
+            except sqlite3.OperationalError as e:
+                print(f"[WARN] Commit failed (attempt {attempt}/5): {e}")
+                if "disk i/o error" not in str(e).lower() and "disk I/O error" not in str(e):
+                    break
+                time.sleep(attempt * 2)
+
         conn.close()
+
+        if not commit_ok:
+            print("[ERROR] Could not commit DB changes due to disk I/O error.")
+            return
 
         print("\n--- Summary ---")
         print(f"[SUMMARY] Upserted annual rows (financial_metrics): {saved}")
