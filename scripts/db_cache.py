@@ -2,8 +2,83 @@ import os
 import sqlite3
 import hashlib
 import numpy as np
+from decimal import Decimal, InvalidOperation
 
 DB_PATH = "/content/drive/MyDrive/THINK_MVP/04_Analysis_Output/transformation_cache.db"
+
+
+def _migrate_financial_metrics_to_text_if_needed(cursor):
+    cursor.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='financial_metrics'"
+    )
+    if not cursor.fetchone():
+        return
+    cursor.execute("PRAGMA table_info(financial_metrics)")
+    rows = cursor.fetchall()
+    if not rows:
+        return
+    col_types = {row[1]: row[2].upper() for row in rows}
+    if col_types.get("revenue") == "TEXT":
+        return
+
+    def to_text(v):
+        if v is None:
+            return None
+        try:
+            d = Decimal(str(v))
+        except InvalidOperation:
+            return None
+        if d == d.to_integral():
+            return str(int(d))
+        return format(d, "f").rstrip("0").rstrip(".") or "0"
+
+    cursor.execute(
+        """
+        SELECT bank_name, year, revenue, net_profit, operating_income, total_assets, roe
+        FROM financial_metrics
+        """
+    )
+    old_rows = cursor.fetchall()
+    cursor.execute("DROP TABLE financial_metrics")
+    cursor.execute(
+        """
+        CREATE TABLE financial_metrics (
+            bank_name TEXT,
+            year INTEGER,
+            revenue TEXT,
+            net_profit TEXT,
+            operating_income TEXT,
+            total_assets TEXT,
+            roe TEXT,
+            PRIMARY KEY(bank_name, year)
+        )
+        """
+    )
+    for (
+        bank_name,
+        year,
+        revenue,
+        net_profit,
+        operating_income,
+        total_assets,
+        roe,
+    ) in old_rows:
+        cursor.execute(
+            """
+            INSERT INTO financial_metrics
+            (bank_name, year, revenue, net_profit, operating_income, total_assets, roe)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                bank_name,
+                year,
+                to_text(revenue),
+                to_text(net_profit),
+                to_text(operating_income),
+                to_text(total_assets),
+                to_text(roe),
+            ),
+        )
 
 
 # ==========================================
@@ -43,11 +118,11 @@ def init_db():
     CREATE TABLE IF NOT EXISTS financial_metrics (
         bank_name TEXT,
         year INTEGER,
-        revenue REAL,
-        net_profit REAL,
-        operating_income REAL,
-        total_assets REAL,
-        roe REAL,
+        revenue TEXT,
+        net_profit TEXT,
+        operating_income TEXT,
+        total_assets TEXT,
+        roe TEXT,
         PRIMARY KEY(bank_name, year)
     )
     """)
@@ -327,6 +402,7 @@ def init_db():
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
     """)
+    _migrate_financial_metrics_to_text_if_needed(cursor)
     conn.commit()
     conn.close()
 

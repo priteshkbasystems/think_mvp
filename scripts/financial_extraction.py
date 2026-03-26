@@ -1,5 +1,8 @@
 import re
 import sqlite3
+from decimal import Decimal, InvalidOperation
+
+from scripts.db_cache import init_db
 
 DB_PATH = "/content/drive/MyDrive/THINK_MVP/04_Analysis_Output/transformation_cache.db"
 
@@ -11,15 +14,39 @@ class FinancialExtractor:
     def __init__(self):
         print(
             "Loading Financial Metrics Extractor "
-            "(corporate_sentence_sentiment + pdf_text_cache fallback)"
+            "(corporate_sentence_sentiment + pdf_text_cache fallback; values stored as TEXT)"
         )
 
-    def clean_value(self, value):
-        try:
-            value = str(value).replace(",", "").replace("%", "").strip()
-            return float(value)
-        except Exception:
+    @staticmethod
+    def normalize_numeric_string(raw):
+        """Plain digit string for SQLite — no float/scientific notation."""
+        if raw is None:
             return None
+        s = str(raw).strip().replace(",", "").replace("%", "")
+        if not s:
+            return None
+        try:
+            d = Decimal(s)
+        except InvalidOperation:
+            return None
+        if d == d.to_integral():
+            return str(int(d))
+        return format(d, "f").rstrip("0").rstrip(".") or "0"
+
+    @staticmethod
+    def to_decimal(s):
+        try:
+            return Decimal(s)
+        except (InvalidOperation, TypeError):
+            return None
+
+    def passes_threshold(self, metric, storage_str):
+        d = self.to_decimal(storage_str)
+        if d is None:
+            return False
+        if metric == "roe":
+            return Decimal(0) <= d <= Decimal(100)
+        return d > Decimal(1000)
 
     def extract_metrics_from_sentence(self, sentence_text):
         text = (sentence_text or "").lower()
@@ -40,18 +67,12 @@ class FinancialExtractor:
             if not match:
                 continue
 
-            value = self.clean_value(match.group(2))
-            if value is None:
+            storage = self.normalize_numeric_string(match.group(2))
+            if storage is None:
                 continue
+            if self.passes_threshold(metric, storage):
+                found[metric] = storage
 
-            if metric == "roe":
-                if 0 <= value <= 100:
-                    found[metric] = value
-            else:
-                if value > 1000:
-                    found[metric] = value
-
-        # fallback: capture number anywhere in sentence if keyword exists
         keyword_map = {
             "revenue": ["net interest income", "total operating income", "total income", "revenue"],
             "net_profit": ["profit attributable", "net profit", "profit for the year"],
@@ -59,30 +80,39 @@ class FinancialExtractor:
             "total_assets": ["total assets"],
             "roe": ["return on equity", "roe"],
         }
-        all_numbers = [self.clean_value(x) for x in re.findall(r"[\d,]+(?:\.\d+)?", text)]
-        all_numbers = [n for n in all_numbers if n is not None]
+        tokens = re.findall(r"[\d,]+(?:\.\d+)?", text)
+        all_strings = []
+        for t in tokens:
+            s = self.normalize_numeric_string(t)
+            if s is not None:
+                all_strings.append(s)
 
         for metric, keys in keyword_map.items():
             if metric in found:
                 continue
             if not any(k in text for k in keys):
                 continue
-            if not all_numbers:
+            if not all_strings:
                 continue
 
             if metric == "roe":
-                candidates = [n for n in all_numbers if 0 <= n <= 100]
+                candidates = [
+                    s for s in all_strings
+                    if self.passes_threshold("roe", s)
+                ]
                 if candidates:
-                    found[metric] = max(candidates)
+                    found[metric] = max(candidates, key=lambda x: Decimal(x))
             else:
-                candidates = [n for n in all_numbers if n > 1000]
+                candidates = [
+                    s for s in all_strings
+                    if self.passes_threshold(metric, s)
+                ]
                 if candidates:
-                    found[metric] = max(candidates)
+                    found[metric] = max(candidates, key=lambda x: Decimal(x))
 
         return found
 
     def extract_metrics_from_long_text(self, text):
-        """Scan line-by-line (full pdf_text_cache body) and merge max per metric."""
         if not text or not str(text).strip():
             return {}
         buckets = {k: [] for k in self.METRIC_KEYS}
@@ -93,7 +123,11 @@ class FinancialExtractor:
             found = self.extract_metrics_from_sentence(line)
             for k, v in found.items():
                 buckets[k].append(v)
-        return {k: max(vs) for k, vs in buckets.items() if vs}
+        out = {}
+        for k, vs in buckets.items():
+            if vs:
+                out[k] = max(vs, key=lambda x: Decimal(x))
+        return out
 
     def _merge_max(self, a, b):
         out = dict(a)
@@ -103,14 +137,12 @@ class FinancialExtractor:
             if k not in out or out[k] is None:
                 out[k] = v
             else:
-                out[k] = max(out[k], v)
+                out[k] = max([out[k], v], key=lambda x: Decimal(x))
         return out
 
     def _needs_pdf_fallback(self, result):
-        """Use pdf_text_cache when sentence-level data is missing core metrics."""
         if not result:
             return True
-        # Require main P&L / balance cues; ROE often absent in snippets
         core = ("revenue", "net_profit", "total_assets")
         return any(result.get(k) is None for k in core)
 
@@ -122,6 +154,8 @@ class FinancialExtractor:
 
     def run(self):
         print("\nStarting extraction (sentences first, pdf_text_cache fallback)\n")
+
+        init_db()
 
         conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
@@ -187,7 +221,7 @@ class FinancialExtractor:
             for metric, values in metric_values.items():
                 if not values:
                     continue
-                result[metric] = max(values)
+                result[metric] = max(values, key=lambda x: Decimal(x))
 
             print(
                 f"[SENTENCES] Parsed from sentence_text → "
@@ -237,7 +271,7 @@ class FinancialExtractor:
                             break
 
             print(
-                f"[FINAL] Values to save: "
+                f"[FINAL] Values to save (TEXT): "
                 f"{ {k: result.get(k) for k in self.METRIC_KEYS} }"
             )
             print(f"[FINAL] Still missing: {self._missing_keys(result) or '(none)'}")
