@@ -2,7 +2,7 @@ import os
 import sqlite3
 import pandas as pd
 
-from scripts.db_cache import init_db, register_bank
+from scripts.db_cache import init_db, register_bank, get_bank_id
 
 DB_PATH = "/content/drive/MyDrive/THINK_MVP/04_Analysis_Output/transformation_cache.db"
 BASE_CORP_PATH = "/content/drive/MyDrive/THINK_MVP/01_Corporate_Documents"
@@ -17,11 +17,14 @@ def save_stock_return(bank_name, year, value):
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
 
+    cursor.execute("INSERT OR IGNORE INTO banks (bank_name) VALUES (?)", (bank_name,))
+    cursor.execute("SELECT bank_id FROM banks WHERE bank_name=?", (bank_name,))
+    bank_id = cursor.fetchone()[0]
     cursor.execute("""
     INSERT OR REPLACE INTO stock_returns
-    (bank_name, year, return)
-    VALUES (?, ?, ?)
-    """, (bank_name, year, value))
+    (bank_id, bank_name, year, return)
+    VALUES (?, ?, ?, ?)
+    """, (bank_id, bank_name, year, value))
 
     conn.commit()
     conn.close()

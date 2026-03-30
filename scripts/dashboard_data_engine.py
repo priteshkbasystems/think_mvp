@@ -23,7 +23,7 @@ TOPIC_KEYWORDS = {
 def generate_topic_sentiment(cursor):
 
     cursor.execute("""
-    SELECT bank_name, review_text, sentiment_score
+    SELECT bank_id, bank_name, review_text, sentiment_score
     FROM review_sentiments
     """)
 
@@ -31,7 +31,7 @@ def generate_topic_sentiment(cursor):
 
     topic_data = defaultdict(lambda: {"count":0,"sentiment":0})
 
-    for bank,text,score in rows:
+    for bank_id, bank, text, score in rows:
 
         text = text.lower()
 
@@ -39,17 +39,17 @@ def generate_topic_sentiment(cursor):
 
             if any(k in text for k in keywords):
 
-                topic_data[(bank,topic)]["count"] += 1
-                topic_data[(bank,topic)]["sentiment"] += score
+                topic_data[(bank_id, bank, topic)]["count"] += 1
+                topic_data[(bank_id, bank, topic)]["sentiment"] += score
 
 
-    for (bank,topic),data in topic_data.items():
+    for (bank_id, bank, topic), data in topic_data.items():
 
         cursor.execute("""
         INSERT INTO complaint_topics
-        (bank_name, topic_id, keywords, review_count)
-        VALUES (?,?,?,?)
-        """,(bank,topic,topic,data["count"]))
+        (bank_id, bank_name, topic_id, keywords, review_count)
+        VALUES (?,?,?,?,?)
+        """,(bank_id, bank, topic, topic, data["count"]))
 
 
 # ==========================================
@@ -58,21 +58,21 @@ def generate_topic_sentiment(cursor):
 
 def compute_correlation(cursor):
 
-    cursor.execute("SELECT DISTINCT bank_name FROM narrative_scores")
-    banks=[r[0] for r in cursor.fetchall()]
+    cursor.execute("SELECT DISTINCT bank_id, bank_name FROM narrative_scores")
+    banks=[(r[0], r[1]) for r in cursor.fetchall()]
 
-    for bank in banks:
+    for bank_id, bank in banks:
 
         cursor.execute("""
         SELECT year, score FROM narrative_scores
-        WHERE bank_name=?
-        """,(bank,))
+        WHERE bank_id=?
+        """,(bank_id,))
         narrative=dict(cursor.fetchall())
 
         cursor.execute("""
         SELECT year, sentiment FROM sentiment_scores
-        WHERE bank_name=?
-        """,(bank,))
+        WHERE bank_id=?
+        """,(bank_id,))
         sentiment=dict(cursor.fetchall())
 
         years=set(narrative.keys()) & set(sentiment.keys())
@@ -87,9 +87,9 @@ def compute_correlation(cursor):
 
         cursor.execute("""
         INSERT OR REPLACE INTO narrative_sentiment_correlation
-        (bank_name, correlation)
-        VALUES (?,?)
-        """,(bank,float(r)))
+        (bank_id, bank_name, correlation)
+        VALUES (?,?,?)
+        """,(bank_id, bank, float(r)))
 
 
 # ==========================================
@@ -98,21 +98,21 @@ def compute_correlation(cursor):
 
 def compute_lag(cursor):
 
-    cursor.execute("SELECT DISTINCT bank_name FROM narrative_scores")
-    banks=[r[0] for r in cursor.fetchall()]
+    cursor.execute("SELECT DISTINCT bank_id, bank_name FROM narrative_scores")
+    banks=[(r[0], r[1]) for r in cursor.fetchall()]
 
-    for bank in banks:
+    for bank_id, bank in banks:
 
         cursor.execute("""
         SELECT year, score FROM narrative_scores
-        WHERE bank_name=?
-        """,(bank,))
+        WHERE bank_id=?
+        """,(bank_id,))
         narrative=dict(cursor.fetchall())
 
         cursor.execute("""
         SELECT year, sentiment FROM sentiment_scores
-        WHERE bank_name=?
-        """,(bank,))
+        WHERE bank_id=?
+        """,(bank_id,))
         sentiment=dict(cursor.fetchall())
 
         lag_scores={}
@@ -138,9 +138,9 @@ def compute_lag(cursor):
 
             cursor.execute("""
             INSERT OR REPLACE INTO narrative_lag
-            (bank_name, lag_months)
-            VALUES (?,?)
-            """,(bank,best_lag*12))
+            (bank_id, bank_name, lag_months)
+            VALUES (?,?,?)
+            """,(bank_id, bank, best_lag*12))
 
 
 # ==========================================
@@ -149,15 +149,15 @@ def compute_lag(cursor):
 
 def generate_prediction(cursor):
 
-    cursor.execute("SELECT DISTINCT bank_name FROM sentiment_scores")
-    banks=[r[0] for r in cursor.fetchall()]
+    cursor.execute("SELECT DISTINCT bank_id, bank_name FROM sentiment_scores")
+    banks=[(r[0], r[1]) for r in cursor.fetchall()]
 
-    for bank in banks:
+    for bank_id, bank in banks:
 
         cursor.execute("""
         SELECT year,sentiment FROM sentiment_scores
-        WHERE bank_name=?
-        """,(bank,))
+        WHERE bank_id=?
+        """,(bank_id,))
 
         rows=cursor.fetchall()
 
@@ -174,9 +174,9 @@ def generate_prediction(cursor):
 
         cursor.execute("""
         INSERT OR REPLACE INTO sentiment_predictions
-        (bank_name, year, predicted_sentiment)
-        VALUES (?,?,?)
-        """,(bank,2026,float(pred)))
+        (bank_id, bank_name, year, predicted_sentiment)
+        VALUES (?,?,?,?)
+        """,(bank_id, bank, 2026, float(pred)))
 
 
 # ==========================================
@@ -195,14 +195,17 @@ def generate_highlights(cursor):
     for path,year in rows:
 
         bank=path.split("/")[-4].replace("_"," ")
+        cursor.execute("INSERT OR IGNORE INTO banks (bank_name) VALUES (?)", (bank,))
+        cursor.execute("SELECT bank_id FROM banks WHERE bank_name=?", (bank,))
+        bank_id = cursor.fetchone()[0]
 
         highlight=f"Major digital initiative mentioned in {year} report"
 
         cursor.execute("""
         INSERT INTO narrative_highlights
-        (bank_name, year, highlight)
-        VALUES (?,?,?)
-        """,(bank,year,highlight))
+        (bank_id, bank_name, year, highlight)
+        VALUES (?,?,?,?)
+        """,(bank_id, bank, year, highlight))
 
 
 # ==========================================

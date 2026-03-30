@@ -41,6 +41,9 @@ class TransformationCompetencyEngine:
         for path, year in rows:
 
             bank = path.split("/")[-3]
+            cursor.execute("INSERT OR IGNORE INTO banks (bank_name) VALUES (?)", (bank,))
+            cursor.execute("SELECT bank_id FROM banks WHERE bank_name=?", (bank,))
+            bank_id = cursor.fetchone()[0]
 
             text = path
 
@@ -54,9 +57,9 @@ class TransformationCompetencyEngine:
 
                 cursor.execute("""
                 INSERT INTO transformation_competencies
-                (bank_name, year, competency, score)
-                VALUES (?, ?, ?, ?)
-                """, (bank, year, comp, score))
+                (bank_id, bank_name, year, competency, score)
+                VALUES (?, ?, ?, ?, ?)
+                """, (bank_id, bank, year, comp, score))
 
                 results.setdefault(bank, {})
                 results[bank][comp] = score

@@ -316,6 +316,7 @@ class FinancialExtractor:
         cursor.execute(
             """
             CREATE TABLE IF NOT EXISTS financial_metrics_periodic (
+                bank_id INTEGER,
                 bank_name TEXT,
                 year INTEGER,
                 period_type TEXT,
@@ -339,6 +340,8 @@ class FinancialExtractor:
             cursor.execute("ALTER TABLE financial_metrics_periodic ADD COLUMN currency TEXT")
         if "unit_multiplier" not in periodic_cols:
             cursor.execute("ALTER TABLE financial_metrics_periodic ADD COLUMN unit_multiplier INTEGER")
+        if "bank_id" not in periodic_cols:
+            cursor.execute("ALTER TABLE financial_metrics_periodic ADD COLUMN bank_id INTEGER")
 
         cursor.execute("PRAGMA table_info(financial_metrics)")
         annual_cols = {row[1] for row in cursor.fetchall()}
@@ -362,6 +365,10 @@ class FinancialExtractor:
 
         for bank_name, year, period_type, period_label, file_path in rows:
             print(f"\n[PDF] {bank_name} | {year} | {period_label} | {file_path}")
+            cursor.execute("INSERT OR IGNORE INTO banks (bank_name) VALUES (?)", (bank_name,))
+            cursor.execute("SELECT bank_id FROM banks WHERE bank_name=?", (bank_name,))
+            bank_id_row = cursor.fetchone()
+            bank_id = bank_id_row[0] if bank_id_row else None
 
             try:
                 metrics = self.extract_financials(file_path)
@@ -396,10 +403,11 @@ class FinancialExtractor:
             cursor.execute(
                 """
                 INSERT OR REPLACE INTO financial_metrics_periodic
-                (bank_name, year, period_type, period_label, currency, unit_multiplier, revenue, net_profit, operating_income, total_assets, roe, source_file_path)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                (bank_id, bank_name, year, period_type, period_label, currency, unit_multiplier, revenue, net_profit, operating_income, total_assets, roe, source_file_path)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
+                    bank_id,
                     bank_name,
                     int(year),
                     period_type,
@@ -422,10 +430,11 @@ class FinancialExtractor:
                 cursor.execute(
                     """
                     INSERT OR REPLACE INTO financial_metrics
-                    (bank_name, year, currency, unit_multiplier, revenue, net_profit, operating_income, total_assets, roe)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    (bank_id, bank_name, year, currency, unit_multiplier, revenue, net_profit, operating_income, total_assets, roe)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
+                        bank_id,
                         bank_name,
                         int(year),
                         metrics.get("currency"),

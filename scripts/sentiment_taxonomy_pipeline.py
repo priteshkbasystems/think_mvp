@@ -13,14 +13,14 @@ def main():
     cursor = conn.cursor()
 
     cursor.execute("""
-    SELECT bank_name, year, review_text
+    SELECT bank_id, bank_name, year, review_text
     FROM review_sentiments
     LIMIT 1000
     """)
 
     rows = cursor.fetchall()
 
-    for bank, year, text in rows:
+    for _bank_id, bank, year, text in rows:
 
         emotion, category = engine.classify(text)
 

@@ -16,12 +16,12 @@ class TransformationLagAnalysis:
         conn = sqlite3.connect(DB_PATH)
 
         narrative = pd.read_sql("""
-        SELECT bank_name, year, score
+        SELECT bank_id, bank_name, year, score
         FROM narrative_scores
         """, conn)
 
         sentiment = pd.read_sql("""
-        SELECT bank_name, year, sentiment
+        SELECT bank_id, bank_name, year, sentiment
         FROM sentiment_scores
         """, conn)
 
@@ -29,14 +29,14 @@ class TransformationLagAnalysis:
 
         results = {}
 
-        banks = narrative["bank_name"].unique()
+        banks = narrative["bank_id"].unique()
 
         for bank in banks:
 
-            n = narrative[narrative["bank_name"] == bank].sort_values("year")
-            s = sentiment[sentiment["bank_name"] == bank].sort_values("year")
+            n = narrative[narrative["bank_id"] == bank].sort_values("year")
+            s = sentiment[sentiment["bank_id"] == bank].sort_values("year")
 
-            merged = pd.merge(n, s, on=["bank_name","year"])
+            merged = pd.merge(n, s, on=["bank_id", "bank_name", "year"])
 
             if len(merged) < 3:
                 continue
@@ -62,7 +62,8 @@ class TransformationLagAnalysis:
                     best_corr = corr
                     best_lag = lag
 
-            results[bank] = {
+            bank_label = merged["bank_name"].iloc[0]
+            results[bank_label] = {
                 "lag_years": best_lag,
                 "correlation": round(float(best_corr),3)
             }

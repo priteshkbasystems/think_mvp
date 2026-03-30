@@ -15,7 +15,7 @@ class SourceConcordance:
         cursor = conn.cursor()
 
         cursor.execute("""
-        SELECT bank_name, review_source, sentiment_score
+        SELECT bank_id, bank_name, review_source, sentiment_score
         FROM review_sentiments
         """)
 
@@ -23,18 +23,18 @@ class SourceConcordance:
 
         bank_sources = {}
 
-        for bank, source, score in rows:
+        for bank_id, bank, source, score in rows:
 
             if source is None:
                 source = "unknown"
 
-            bank_sources.setdefault(bank, {})
-            bank_sources[bank].setdefault(source, [])
-            bank_sources[bank][source].append(score)
+            bank_sources.setdefault((bank_id, bank), {})
+            bank_sources[(bank_id, bank)].setdefault(source, [])
+            bank_sources[(bank_id, bank)][source].append(score)
 
         results = {}
 
-        for bank, sources in bank_sources.items():
+        for (bank_id, bank), sources in bank_sources.items():
 
             source_avg = {}
 
@@ -46,9 +46,9 @@ class SourceConcordance:
 
                 cursor.execute("""
                 INSERT INTO source_concordance
-                (bank_name, review_source, avg_sentiment)
-                VALUES (?, ?, ?)
-                """, (bank, source, avg))
+                (bank_id, bank_name, review_source, avg_sentiment)
+                VALUES (?, ?, ?, ?)
+                """, (bank_id, bank, source, avg))
 
             values = list(source_avg.values())
 

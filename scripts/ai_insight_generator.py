@@ -56,7 +56,7 @@ def load_stock_returns():
 
     try:
         cursor.execute(
-            "SELECT bank_name, year, return FROM stock_returns"
+            "SELECT bank_id, bank_name, year, return FROM stock_returns"
         )
 
         rows = cursor.fetchall()
@@ -70,7 +70,7 @@ def load_stock_returns():
 
     stock = {}
 
-    for bank, year, value in rows:
+    for _bank_id, bank, year, value in rows:
 
         if bank not in stock:
             stock[bank] = {}

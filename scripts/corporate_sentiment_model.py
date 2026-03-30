@@ -131,11 +131,18 @@ class CorporateSentimentModel:
         # remove failed jobs
         results = [r for r in results if r]
 
+        upsert_rows = []
+        for bank_name, year, score in results:
+            cursor.execute("INSERT OR IGNORE INTO banks (bank_name) VALUES (?)", (bank_name,))
+            cursor.execute("SELECT bank_id FROM banks WHERE bank_name=?", (bank_name,))
+            bank_id = cursor.fetchone()[0]
+            upsert_rows.append((bank_id, bank_name, year, score))
+
         cursor.executemany("""
         INSERT OR REPLACE INTO corporate_sentiment
-        (bank_name, year, sentiment)
-        VALUES (?, ?, ?)
-        """, results)
+        (bank_id, bank_name, year, sentiment)
+        VALUES (?, ?, ?, ?)
+        """, upsert_rows)
 
         conn.commit()
         conn.close()

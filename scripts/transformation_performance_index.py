@@ -15,25 +15,28 @@ class TransformationPerformanceIndex:
         cursor = conn.cursor()
 
         cursor.execute("""
-        SELECT bank_name, AVG(score)
+        SELECT bank_id, AVG(score)
         FROM narrative_scores
-        GROUP BY bank_name
+        GROUP BY bank_id
         """)
         narrative = dict(cursor.fetchall())
 
         cursor.execute("""
-        SELECT bank_name, AVG(sentiment)
+        SELECT bank_id, AVG(sentiment)
         FROM sentiment_scores
-        GROUP BY bank_name
+        GROUP BY bank_id
         """)
         sentiment = dict(cursor.fetchall())
 
         cursor.execute("""
-        SELECT bank_name, AVG(return)
+        SELECT bank_id, AVG(return)
         FROM stock_returns
-        GROUP BY bank_name
+        GROUP BY bank_id
         """)
         returns = dict(cursor.fetchall())
+
+        cursor.execute("SELECT bank_id, bank_name FROM banks")
+        bank_lookup = dict(cursor.fetchall())
 
         index = {}
 
@@ -45,7 +48,7 @@ class TransformationPerformanceIndex:
 
             score = np.mean([n,s,r])
 
-            index[bank] = round(float(score),3)
+            index[bank_lookup.get(bank, str(bank))] = round(float(score),3)
 
         conn.close()
 

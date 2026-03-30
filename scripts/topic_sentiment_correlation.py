@@ -17,26 +17,26 @@ class TopicSentimentCorrelation:
         # CORPORATE TOPIC SENTIMENT
         # -----------------------------------------
         corp = pd.read_sql("""
-        SELECT bank_name, topic, AVG(sentiment) AS sentiment
+        SELECT bank_id, bank_name, topic, AVG(sentiment) AS sentiment
         FROM corporate_topic_sentiment
-        GROUP BY bank_name, topic
+        GROUP BY bank_id, bank_name, topic
         """, conn)
 
         # -----------------------------------------
         # CUSTOMER TOPIC SENTIMENT (NOW VALID)
         # -----------------------------------------
         cust = pd.read_sql("""
-        SELECT bank_name, topic_id, AVG(sentiment_score) AS sentiment
+        SELECT bank_id, bank_name, topic_id, AVG(sentiment_score) AS sentiment
         FROM review_sentiments
         WHERE topic_id IS NOT NULL
-        GROUP BY bank_name, topic_id
+        GROUP BY bank_id, bank_name, topic_id
         """, conn)
 
         # -----------------------------------------
         # TOPIC MAPPING (topic_id → keywords)
         # -----------------------------------------
         topics = pd.read_sql("""
-        SELECT bank_name, topic_id, keywords
+        SELECT bank_id, bank_name, topic_id, keywords
         FROM complaint_topics
         """, conn)
 
@@ -47,11 +47,11 @@ class TopicSentimentCorrelation:
         # -----------------------------------------
         # PROCESS PER BANK
         # -----------------------------------------
-        for bank in corp["bank_name"].unique():
+        for bank_id in corp["bank_id"].unique():
 
-            corp_df = corp[corp["bank_name"] == bank]
-            cust_df = cust[cust["bank_name"] == bank]
-            topic_df = topics[topics["bank_name"] == bank]
+            corp_df = corp[corp["bank_id"] == bank_id]
+            cust_df = cust[cust["bank_id"] == bank_id]
+            topic_df = topics[topics["bank_id"] == bank_id]
 
             if corp_df.empty or cust_df.empty or topic_df.empty:
                 continue
@@ -94,6 +94,7 @@ class TopicSentimentCorrelation:
             corr = df["corp"].corr(df["cust"])
 
             if pd.notna(corr):
-                correlations[bank] = round(float(corr), 3)
+                bank_name = corp_df["bank_name"].iloc[0]
+                correlations[bank_name] = round(float(corr), 3)
 
         return correlations

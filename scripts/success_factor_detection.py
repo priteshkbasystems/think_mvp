@@ -18,6 +18,7 @@ class SuccessFactorDetection:
         # -----------------------------------------
         topics = pd.read_sql("""
         SELECT 
+            bank_id,
             bank_name,
             topic_id,
             keywords,
@@ -30,10 +31,11 @@ class SuccessFactorDetection:
         # -----------------------------------------
         sentiments = pd.read_sql("""
         SELECT 
+            bank_id,
             bank_name,
             AVG(sentiment_score) AS sentiment
         FROM review_sentiments
-        GROUP BY bank_name
+        GROUP BY bank_id, bank_name
         """, conn)
 
         conn.close()
@@ -46,6 +48,7 @@ class SuccessFactorDetection:
 
             return pd.DataFrame({
                 "bank_name": [],
+                "bank_id": [],
                 "topic_id": [],
                 "keywords": [],
                 "sentiment": [],
@@ -58,7 +61,7 @@ class SuccessFactorDetection:
         merged = pd.merge(
             topics,
             sentiments,
-            on="bank_name",
+            on=["bank_id", "bank_name"],
             how="left"
         )
 
@@ -82,6 +85,7 @@ class SuccessFactorDetection:
 
             return pd.DataFrame({
                 "bank_name": [],
+                "bank_id": [],
                 "topic_id": [],
                 "keywords": [],
                 "sentiment": [],

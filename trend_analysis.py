@@ -10,6 +10,7 @@ import multiprocessing
 from models.sentiment_model import SentimentModel
 from scripts.utils.sentiment_utils import sentiment_label
 from scripts.progress_tracker import ProgressTracker
+from scripts.db_cache import register_bank, get_bank_id
 
 
 BASE_CORP_PATH = "/content/drive/MyDrive/THINK_MVP/01_Corporate_Documents"
@@ -141,7 +142,8 @@ def load_reviews(folder):
                     "year": int(row["Date"].year),
                     "text": text,
                     "rating": row["Rating"],
-                    "hash": review_hash(text)
+                    "hash": review_hash(text),
+                    "source": f"{file}::{sheet}"
                 })
 
     return data
@@ -178,8 +180,36 @@ def bulk_insert_reviews(cursor, rows):
     cursor.executemany(
         """
         INSERT OR IGNORE INTO review_sentiments
-        (bank_name, year, review_text, review_hash, rating, sentiment_score, sentiment_label)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        (bank_id, bank_name, year, review_text, review_hash, rating, sentiment_score, sentiment_label, review_source)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        rows
+    )
+
+
+# --------------------------------------------------
+# Backfill review source for existing rows
+# --------------------------------------------------
+
+def backfill_review_sources(cursor, bank_name, items):
+
+    rows = []
+    for item in items:
+        source = item.get("source")
+        h = item.get("hash")
+        if source and h:
+            rows.append((source, bank_name, h))
+
+    if not rows:
+        return
+
+    cursor.executemany(
+        """
+        UPDATE review_sentiments
+        SET review_source = ?
+        WHERE bank_name = ?
+          AND review_hash = ?
+          AND (review_source IS NULL OR TRIM(review_source) = '')
         """,
         rows
     )
@@ -196,8 +226,8 @@ def filter_new_reviews(cursor, items):
     for item in items:
 
         cursor.execute(
-            "SELECT 1 FROM review_sentiments WHERE review_hash=? LIMIT 1",
-            (item["hash"],)
+            "SELECT 1 FROM review_sentiments WHERE review_hash=? AND bank_id=? LIMIT 1",
+            (item["hash"], item["bank_id"])
         )
 
         if cursor.fetchone() is None:
@@ -219,11 +249,19 @@ def process_bank(args):
 
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
+    register_bank(bank)
+    bank_id = get_bank_id(bank)
 
     data = load_reviews(path)
+    for d in data:
+        d["bank_id"] = bank_id
 
     if len(data) == 0:
         return bank, None
+
+    # Ensure existing rows get review_source populated.
+    backfill_review_sources(cursor, bank, data)
+    conn.commit()
 
     year_groups = defaultdict(list)
 
@@ -250,12 +288,16 @@ def process_bank(args):
         texts = [i["text"] for i in items]
         ratings = [i["rating"] for i in items]
         hashes = [i["hash"] for i in items]
+        sources = [i.get("source") for i in items]
+        bank_ids = [i["bank_id"] for i in items]
 
         for i in range(0, len(texts), BATCH_SIZE):
 
             batch_texts = texts[i:i+BATCH_SIZE]
             batch_ratings = ratings[i:i+BATCH_SIZE]
             batch_hashes = hashes[i:i+BATCH_SIZE]
+            batch_sources = sources[i:i+BATCH_SIZE]
+            batch_bank_ids = bank_ids[i:i+BATCH_SIZE]
 
             preds = sentiment_model.predict_batch(batch_texts)
 
@@ -277,13 +319,15 @@ def process_bank(args):
 
                 bulk_rows.append(
                     (
+                        batch_bank_ids[j],
                         bank,
                         year,
                         batch_texts[j],
                         batch_hashes[j],
                         batch_ratings[j],
                         final_score,
-                        label
+                        label,
+                        batch_sources[j]
                     )
                 )
 
@@ -308,10 +352,10 @@ def process_bank(args):
         cursor.execute(
             """
             INSERT OR REPLACE INTO sentiment_scores
-            (bank_name, year, sentiment, contradiction_ratio)
-            VALUES (?, ?, ?, ?)
+            (bank_id, bank_name, year, sentiment, contradiction_ratio)
+            VALUES (?, ?, ?, ?, ?)
             """,
-            (bank, year, yearly_score, contradiction_ratio)
+            (bank_id, bank, year, yearly_score, contradiction_ratio)
         )
 
         conn.commit()

@@ -244,17 +244,17 @@ def step11():
 
     simulator = ScenarioSimulator()
 
-    cursor.execute("SELECT DISTINCT bank_name FROM narrative_scores")
-    banks = [r[0] for r in cursor.fetchall()]
+    cursor.execute("SELECT DISTINCT bank_id, bank_name FROM narrative_scores")
+    banks = cursor.fetchall()
 
-    for bank in banks:
+    for bank_id, bank in banks:
 
         print(f"\nRunning Scenario Simulation for {bank}")
 
-        cursor.execute("SELECT year, score FROM narrative_scores WHERE bank_name=?", (bank,))
+        cursor.execute("SELECT year, score FROM narrative_scores WHERE bank_id=?", (bank_id,))
         narrative_rows = cursor.fetchall()
 
-        cursor.execute("SELECT year, sentiment FROM sentiment_scores WHERE bank_name=?", (bank,))
+        cursor.execute("SELECT year, sentiment FROM sentiment_scores WHERE bank_id=?", (bank_id,))
         sentiment_rows = cursor.fetchall()
 
         narrative_scores = {y: s for y, s in narrative_rows}

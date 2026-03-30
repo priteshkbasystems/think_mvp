@@ -15,28 +15,28 @@ class TransformationImpactScore:
         conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
 
-        cursor.execute("SELECT DISTINCT bank_name FROM narrative_scores")
-        banks = [row[0] for row in cursor.fetchall()]
+        cursor.execute("SELECT DISTINCT bank_id, bank_name FROM narrative_scores")
+        banks = [(row[0], row[1]) for row in cursor.fetchall()]
 
         results = {}
 
-        for bank in banks:
+        for bank_id, bank in banks:
 
             cursor.execute("""
             SELECT year, score
             FROM narrative_scores
-            WHERE bank_name=?
+            WHERE bank_id=?
             ORDER BY year
-            """, (bank,))
+            """, (bank_id,))
 
             narrative = cursor.fetchall()
 
             cursor.execute("""
             SELECT year, sentiment
             FROM sentiment_scores
-            WHERE bank_name=?
+            WHERE bank_id=?
             ORDER BY year
-            """, (bank,))
+            """, (bank_id,))
 
             sentiment = cursor.fetchall()
 

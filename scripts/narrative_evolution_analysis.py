@@ -15,25 +15,26 @@ class NarrativeEvolutionAnalysis:
         conn = sqlite3.connect(DB_PATH)
 
         df = pd.read_sql("""
-        SELECT bank_name, year, score
+        SELECT bank_id, bank_name, year, score
         FROM narrative_scores
         """, conn)
 
         conn.close()
 
-        pivot = df.pivot(index="bank_name", columns="year", values="score")
+        pivot = df.pivot(index="bank_id", columns="year", values="score")
+        name_map = df.drop_duplicates("bank_id").set_index("bank_id")["bank_name"].to_dict()
 
         trends = {}
 
-        for bank in pivot.index:
+        for bank_id in pivot.index:
 
-            series = pivot.loc[bank].dropna()
+            series = pivot.loc[bank_id].dropna()
 
             if len(series) < 2:
                 continue
 
             trend = series.iloc[-1] - series.iloc[0]
 
-            trends[bank] = round(float(trend),3)
+            trends[name_map.get(bank_id, str(bank_id))] = round(float(trend),3)
 
         return pivot, trends
