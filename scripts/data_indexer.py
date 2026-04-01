@@ -2,10 +2,26 @@ import os
 import sqlite3
 import pandas as pd
 
-from scripts.db_cache import init_db, register_bank, get_bank_id
+from scripts.db_cache import init_db, register_bank
 
 DB_PATH = "/content/drive/MyDrive/THINK_MVP/04_Analysis_Output/transformation_cache.db"
 BASE_CORP_PATH = "/content/drive/MyDrive/THINK_MVP/01_Corporate_Documents"
+
+# Match trend_analysis / market_correlation: one DB row per bank (spaces, not underscores).
+# Skip top-level dirs that are not bank roots (see discover_banks).
+_EXCLUDED_TOP_LEVEL = frozenset(
+    name.lower()
+    for name in (
+        "Annual_Reports",
+        "Investor_Presentations",
+        "Archive",
+        "Temp",
+    )
+)
+
+
+def canonical_bank_name(folder_name):
+    return folder_name.replace("_", " ").strip()
 
 
 # ---------------------------------------
@@ -117,18 +133,24 @@ def discover_banks(base_path):
         if not os.path.isdir(path):
             continue
 
-        stock_file = None
+        if name.lower() in _EXCLUDED_TOP_LEVEL:
+            continue
 
         stock_folder = os.path.join(path, "stock_price")
 
-        if os.path.exists(stock_folder):
+        if not os.path.isdir(stock_folder):
+            continue
 
-            for f in os.listdir(stock_folder):
+        stock_file = None
 
-                if f.endswith(".xlsx") or f.endswith(".csv"):
-                    stock_file = os.path.join(stock_folder, f)
+        for f in os.listdir(stock_folder):
 
-        banks[name] = {
+            if f.endswith(".xlsx") or f.endswith(".csv"):
+                stock_file = os.path.join(stock_folder, f)
+
+        display = canonical_bank_name(name)
+
+        banks[display] = {
             "folder": path,
             "stock": stock_file
         }
