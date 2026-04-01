@@ -52,8 +52,18 @@ class JourneySentiment:
         results = {}
 
         for stage, scores in stages.items():
-            results[stage] = round(float(np.mean(scores)),3)
+            value = round(float(np.mean(scores)),3)
+            results[stage] = value
+            cursor.execute(
+                """
+                INSERT OR REPLACE INTO journey_sentiment
+                (stage, sentiment, updated_at)
+                VALUES (?, ?, CURRENT_TIMESTAMP)
+                """,
+                (stage, value),
+            )
 
+        conn.commit()
         conn.close()
 
         return results

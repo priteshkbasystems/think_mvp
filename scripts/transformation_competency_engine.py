@@ -30,22 +30,27 @@ class TransformationCompetencyEngine:
         cursor = conn.cursor()
 
         cursor.execute("""
-        SELECT file_path, year
-        FROM pdf_cache
+        SELECT bank_id, bank_name, year, sentence_text
+        FROM corporate_sentence_sentiment
         """)
 
         rows = cursor.fetchall()
 
         results = {}
+        grouped = {}
 
-        for path, year in rows:
+        for bank_id, bank, year, sentence_text in rows:
+            key = (bank_id, bank, year)
+            grouped.setdefault(key, [])
+            if sentence_text:
+                grouped[key].append(sentence_text)
 
-            bank = path.split("/")[-3]
-            cursor.execute("INSERT OR IGNORE INTO banks (bank_name) VALUES (?)", (bank,))
-            cursor.execute("SELECT bank_id FROM banks WHERE bank_name=?", (bank,))
-            bank_id = cursor.fetchone()[0]
+        for (bank_id, bank, year), sentences in grouped.items():
 
-            text = path
+            if not sentences:
+                continue
+
+            text = " ".join(sentences[:500])
 
             emb = self.model.encode([text])[0]
 

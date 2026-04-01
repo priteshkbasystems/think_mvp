@@ -59,8 +59,18 @@ class TransformationImpactScore:
             else:
                 tis = delta_sentiment / delta_narrative
 
-            results[bank] = round(tis, 3)
+            tis_rounded = round(tis, 3)
+            results[bank] = tis_rounded
+            cursor.execute(
+                """
+                INSERT OR REPLACE INTO transformation_impact_scores
+                (bank_id, bank_name, tis_score, updated_at)
+                VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+                """,
+                (bank_id, bank, tis_rounded),
+            )
 
+        conn.commit()
         conn.close()
 
         return results

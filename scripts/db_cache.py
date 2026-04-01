@@ -341,6 +341,34 @@ def init_db():
     )
     """)
 
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS transformation_impact_scores (
+        bank_id INTEGER PRIMARY KEY,
+        bank_name TEXT,
+        tis_score REAL,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+    """)
+
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS transformation_performance_index (
+        bank_id INTEGER PRIMARY KEY,
+        bank_name TEXT,
+        score REAL,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+    """)
+
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS transformation_lag_results (
+        bank_id INTEGER PRIMARY KEY,
+        bank_name TEXT,
+        lag_years INTEGER,
+        correlation REAL,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+    """)
+
     # ------------------------------
     # NARRATIVE
     # ------------------------------
@@ -385,6 +413,36 @@ def init_db():
         bank_name TEXT,
         review_source TEXT,
         avg_sentiment REAL
+    )
+    """)
+
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS topic_sentiment_correlation (
+        bank_id INTEGER PRIMARY KEY,
+        bank_name TEXT,
+        correlation REAL,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+    """)
+
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS journey_sentiment (
+        stage TEXT PRIMARY KEY,
+        sentiment REAL,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+    """)
+
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS success_factors (
+        bank_id INTEGER,
+        bank_name TEXT,
+        topic_id INTEGER,
+        keywords TEXT,
+        sentiment REAL,
+        volume INTEGER,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY(bank_id, topic_id)
     )
     """)
 

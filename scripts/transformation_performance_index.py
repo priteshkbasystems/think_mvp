@@ -48,8 +48,19 @@ class TransformationPerformanceIndex:
 
             score = np.mean([n,s,r])
 
-            index[bank_lookup.get(bank, str(bank))] = round(float(score),3)
+            score_rounded = round(float(score),3)
+            bank_name = bank_lookup.get(bank, str(bank))
+            index[bank_name] = score_rounded
+            cursor.execute(
+                """
+                INSERT OR REPLACE INTO transformation_performance_index
+                (bank_id, bank_name, score, updated_at)
+                VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+                """,
+                (bank, bank_name, score_rounded),
+            )
 
+        conn.commit()
         conn.close()
 
         return index

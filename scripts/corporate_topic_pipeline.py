@@ -3,7 +3,11 @@ import re
 
 from scripts.corporate_topic_sentiment import CorporateTopicSentiment
 from scripts.corporate_sentiment_analyzer import CorporateSentimentAnalyzer
-from scripts.transformation_correlation import extract_text_from_pdf, extract_pdf_pages
+from scripts.corporate_pdf_utils import (
+    discover_bank_corporate_folders,
+    extract_text_from_pdf,
+    extract_pdf_pages,
+)
 from scripts.db_cache import (
     save_corporate_topic_sentiment,
     save_corporate_hierarchy_sentiment,
@@ -72,68 +76,68 @@ def main():
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
 
-    for bank in os.listdir(BASE_CORP_PATH):
+    banks = discover_bank_corporate_folders(BASE_CORP_PATH)
 
-        bank_folder = os.path.join(BASE_CORP_PATH, bank)
-
-        if not os.path.isdir(bank_folder):
-            continue
+    for bank, comp in banks.items():
 
         print(f"\n🏦 Processing Corporate Topics for {bank}")
+        folders = [comp.get("annual_reports"), comp.get("investor_presentations")]
+        for folder in folders:
+            if not folder or not os.path.isdir(folder):
+                continue
+            for root, _, files in os.walk(folder):
 
-        for root, _, files in os.walk(bank_folder):
+                for file in files:
 
-            for file in files:
+                    if not file.endswith(".pdf"):
+                        continue
 
-                if not file.endswith(".pdf"):
-                    continue
+                    path = os.path.join(root, file)
 
-                path = os.path.join(root, file)
+                    year = extract_year(path)
 
-                year = extract_year(path)
+                    if not year:
+                        print("⚠ Skipping (no year):", file)
+                        continue
 
-                if not year:
-                    print("⚠ Skipping (no year):", file)
-                    continue
+                    last_modified = os.path.getmtime(path)
 
-                last_modified = os.path.getmtime(path)
+                    # 🔥 SKIP IF ALREADY PROCESSED
+                    if is_pdf_processed(cursor, path, last_modified):
+                        print("✔ Skipping (cached):", file)
+                        continue
 
-                # 🔥 SKIP IF ALREADY PROCESSED
-                if is_pdf_processed(cursor, path, last_modified):
-                    print("✔ Skipping (cached):", file)
-                    continue
+                    print("📄 Processing:", file)
 
-                print("📄 Processing:", file)
+                    # 🔥 USE TEXT CACHE
+                    full_text = get_cached_pdf_text(path)
 
-                # 🔥 USE TEXT CACHE
-                full_text = get_cached_pdf_text(path)
+                    if not full_text:
+                        full_text = extract_text_from_pdf(path)
+                        save_pdf_text(path, full_text)
 
-                if not full_text:
-                    full_text = extract_text_from_pdf(path)
-                    save_pdf_text(path, full_text)
+                    if not full_text:
+                        continue
 
-                if not full_text:
-                    continue
+                    text = full_text[:5000]
 
-                text = full_text[:5000]
+                    topic_scores = analyzer.analyze(text)
 
-                topic_scores = analyzer.analyze(text)
+                    save_corporate_topic_sentiment(bank, year, topic_scores)
 
-                save_corporate_topic_sentiment(bank, year, topic_scores)
+                    pages = extract_pdf_pages(path)
+                    if not pages and full_text.strip():
+                        pages = [(1, full_text)]
 
-                pages = extract_pdf_pages(path)
-                if not pages and full_text.strip():
-                    pages = [(1, full_text)]
+                    if pages:
+                        hierarchy = corp_analyzer.analyze_pages(pages)
+                        save_corporate_hierarchy_sentiment(conn, bank, year, path, hierarchy)
 
-                if pages:
-                    hierarchy = corp_analyzer.analyze_pages(pages)
-                    save_corporate_hierarchy_sentiment(conn, bank, year, path, hierarchy)
+                    update_topic_cache(cursor, path, last_modified)
 
-                update_topic_cache(cursor, path, last_modified)
+                    conn.commit()
 
-                conn.commit()
-
-                print(f"✔ {bank} {year} topics saved")
+                    print(f"✔ {bank} {year} topics saved")
 
     conn.close()
 

@@ -86,7 +86,6 @@ class TopicMappingEngine:
         SELECT id, review_text
         FROM review_sentiments
         WHERE topic_id IS NULL
-        LIMIT 10000
         """)
 
         reviews = cursor.fetchall()

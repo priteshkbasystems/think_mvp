@@ -3,7 +3,7 @@ import os
 import re
 
 from models.sentiment_model import SentimentModel
-from scripts.transformation_correlation import extract_text_from_pdf
+from scripts.corporate_pdf_utils import extract_text_from_pdf, is_allowed_corporate_pdf
 from scripts.parallel_executor import ParallelExecutor
 
 
@@ -119,24 +119,12 @@ class CorporateSentimentModel:
         cursor = conn.cursor()
 
         cursor.execute("""
-        SELECT file_path, year
-        FROM pdf_cache
+        SELECT bank_id, bank_name, year, AVG(signed_score) AS sentiment
+        FROM corporate_sentence_sentiment
+        GROUP BY bank_id, bank_name, year
         """)
 
-        rows = cursor.fetchall()
-
-        # run documents in parallel
-        results = self.executor.run(self.process_document, rows)
-
-        # remove failed jobs
-        results = [r for r in results if r]
-
-        upsert_rows = []
-        for bank_name, year, score in results:
-            cursor.execute("INSERT OR IGNORE INTO banks (bank_name) VALUES (?)", (bank_name,))
-            cursor.execute("SELECT bank_id FROM banks WHERE bank_name=?", (bank_name,))
-            bank_id = cursor.fetchone()[0]
-            upsert_rows.append((bank_id, bank_name, year, score))
+        upsert_rows = [(r[0], r[1], r[2], r[3]) for r in cursor.fetchall() if r[0] is not None]
 
         cursor.executemany("""
         INSERT OR REPLACE INTO corporate_sentiment

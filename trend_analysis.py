@@ -66,6 +66,7 @@ def fuse_sentiment(text_score, rating):
 def discover_review_folders(base_path):
 
     banks = {}
+    excluded = {"financial_report", "annual_reports", "investor_presentations", "stock_price"}
 
     if not os.path.exists(base_path):
         print("⚠ Base path not found:", base_path)
@@ -76,6 +77,8 @@ def discover_review_folders(base_path):
         bank_path = os.path.join(base_path, bank_folder)
 
         if not os.path.isdir(bank_path):
+            continue
+        if bank_folder.lower() in excluded:
             continue
 
         reviews_path = os.path.join(bank_path, "Reviews")

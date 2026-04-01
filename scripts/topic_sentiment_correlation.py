@@ -95,6 +95,17 @@ class TopicSentimentCorrelation:
 
             if pd.notna(corr):
                 bank_name = corp_df["bank_name"].iloc[0]
-                correlations[bank_name] = round(float(corr), 3)
+                corr_rounded = round(float(corr), 3)
+                correlations[bank_name] = corr_rounded
+                cursor = conn.cursor()
+                cursor.execute(
+                    """
+                    INSERT OR REPLACE INTO topic_sentiment_correlation
+                    (bank_id, bank_name, correlation, updated_at)
+                    VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+                    """,
+                    (int(bank_id), bank_name, corr_rounded),
+                )
 
+        conn.commit()
         return correlations

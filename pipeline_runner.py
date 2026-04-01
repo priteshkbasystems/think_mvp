@@ -89,15 +89,15 @@ def step2():
 run_step("STEP 2 — SENTIMENT TREND", step2)
 
 
-# ==========================================
-# STEP 3 — TRANSFORMATION INTELLIGENCE
-# ==========================================
+# # ==========================================
+# # STEP 3 — TRANSFORMATION INTELLIGENCE
+# # ==========================================
 
-def step3():
-    from scripts.transformation_correlation import main
-    main()
+# def step3():
+#     from scripts.transformation_correlation import main
+#     main()
 
-run_step("STEP 3 — TRANSFORMATION INTELLIGENCE", step3)
+# run_step("STEP 3 — TRANSFORMATION INTELLIGENCE", step3)
 
 
 # ==========================================
@@ -166,7 +166,6 @@ def step7():
     cursor.execute("""
     SELECT review_text, rating
     FROM review_sentiments
-    LIMIT 500
     """)
 
     rows = cursor.fetchall()
@@ -186,16 +185,16 @@ def step7():
 run_step("STEP 7 — ASPECT SENTIMENT", step7)
 
 
-# ==========================================
-# STEP 7.5 — CUSTOM SENTIMENT TAXONOMY
-# ==========================================
+# # ==========================================
+# # STEP 7.5 — CUSTOM SENTIMENT TAXONOMY
+# # ==========================================
 
-def step75():
+# def step75():
 
-    from scripts.sentiment_taxonomy_pipeline import main
-    main()
+#     from scripts.sentiment_taxonomy_pipeline import main
+#     main()
 
-run_step("STEP 7.5 — CUSTOM SENTIMENT TAXONOMY", step75)
+# run_step("STEP 7.5 — CUSTOM SENTIMENT TAXONOMY", step75)
 
 
 # ==========================================
@@ -209,26 +208,26 @@ def step8():
 run_step("STEP 8 — DASHBOARD DATA ENGINE", step8)
 
 
-# ==========================================
-# STEP 9 — STRATEGIC MARKET INTELLIGENCE
-# ==========================================
+# # ==========================================
+# # STEP 9 — STRATEGIC MARKET INTELLIGENCE
+# # ==========================================
 
-def step9():
-    from scripts.strategic_market_intelligence import main
-    main()
+# def step9():
+#     from scripts.strategic_market_intelligence import main
+#     main()
 
-run_step("STEP 9 — MARKET INTELLIGENCE", step9)
+# run_step("STEP 9 — MARKET INTELLIGENCE", step9)
 
 
-# ==========================================
-# STEP 10 — AI EXECUTIVE INSIGHTS
-# ==========================================
+# # ==========================================
+# # STEP 10 — AI EXECUTIVE INSIGHTS
+# # ==========================================
 
-def step10():
-    from scripts.ai_insight_generator import main
-    main()
+# def step10():
+#     from scripts.ai_insight_generator import main
+#     main()
 
-run_step("STEP 10 — AI EXECUTIVE INSIGHTS", step10)
+# run_step("STEP 10 — AI EXECUTIVE INSIGHTS", step10)
 
 
 # ==========================================
@@ -266,9 +265,20 @@ def step11():
 
             future_score = max(narrative_scores.values()) * 1.1
             prediction = predict_fn(future_score)
+            future_year = max(set(narrative_scores.keys()) | set(sentiment_scores.keys())) + 1
+
+            cursor.execute(
+                """
+                INSERT OR REPLACE INTO sentiment_predictions
+                (bank_id, bank_name, year, predicted_sentiment)
+                VALUES (?, ?, ?, ?)
+                """,
+                (bank_id, bank, int(future_year), float(prediction)),
+            )
 
             print(f"Predicted Future Sentiment for {bank}: {round(prediction,3)}")
 
+    conn.commit()
     conn.close()
 
 run_step("STEP 11 — SCENARIO SIMULATION", step11)
@@ -306,19 +316,19 @@ def step13():
 run_step("STEP 13 — SOURCE SENTIMENT CONCORDANCE", step13)
 
 
-# ==========================================
-# STEP 14 — TRANSFORMATION LEXICON
-# ==========================================
+# # ==========================================
+# # STEP 14 — TRANSFORMATION LEXICON
+# # ==========================================
 
-def step14():
+# def step14():
 
-    from scripts.transformation_lexicon import TransformationLexicon
+#     from scripts.transformation_lexicon import TransformationLexicon
 
-    lex = TransformationLexicon()
+#     lex = TransformationLexicon()
 
-    print("Loaded Transformation Terms:", len(lex.get_terms()))
+#     print("Loaded Transformation Terms:", len(lex.get_terms()))
 
-run_step("STEP 14 — TRANSFORMATION LEXICON", step14)
+# run_step("STEP 14 — TRANSFORMATION LEXICON", step14)
 
 
 # ==========================================
@@ -345,34 +355,34 @@ def step16():
 run_step("STEP 16 — CUSTOMER JOURNEY SENTIMENT", step16)
 
 
-# ==========================================
-# STEP 17 — HUMAN FEEDBACK LOOP
-# ==========================================
+# # ==========================================
+# # STEP 17 — HUMAN FEEDBACK LOOP
+# # ==========================================
 
-def step17():
+# def step17():
 
-    from scripts.feedback_learning import FeedbackLearning
+#     from scripts.feedback_learning import FeedbackLearning
 
-    f = FeedbackLearning()
+#     f = FeedbackLearning()
 
-    print("Human labeled samples:", f.check_new_labels())
+#     print("Human labeled samples:", f.check_new_labels())
 
-run_step("STEP 17 — HUMAN FEEDBACK LOOP", step17)
+# run_step("STEP 17 — HUMAN FEEDBACK LOOP", step17)
 
 
-# ==========================================
-# STEP 18 — MODEL RETRAINING
-# ==========================================
+# # ==========================================
+# # STEP 18 — MODEL RETRAINING
+# # ==========================================
 
-def step18():
+# def step18():
 
-    from scripts.model_retraining import ModelRetraining
+#     from scripts.model_retraining import ModelRetraining
 
-    r = ModelRetraining()
+#     r = ModelRetraining()
 
-    r.retrain()
+#     r.retrain()
 
-run_step("STEP 18 — MODEL RETRAINING", step18)
+# run_step("STEP 18 — MODEL RETRAINING", step18)
 
 
 # ==========================================
@@ -410,28 +420,28 @@ def step20():
 run_step("STEP 20 — TRANSFORMATION PERFORMANCE INDEX", step20)
 
 
-# ==========================================
-# STEP 21 — COMPETITOR BENCHMARK
-# ==========================================
+# # ==========================================
+# # STEP 21 — COMPETITOR BENCHMARK
+# # ==========================================
 
-def step21():
+# def step21():
 
-    from scripts.competitor_benchmark_pipeline import main
-    main()
+#     from scripts.competitor_benchmark_pipeline import main
+#     main()
 
-run_step("STEP 21 — COMPETITOR BENCHMARK", step21)
+# run_step("STEP 21 — COMPETITOR BENCHMARK", step21)
 
 
-# ==========================================
-# STEP 22 — CONVERSATION SENTIMENT FLOW
-# ==========================================
+# # ==========================================
+# # STEP 22 — CONVERSATION SENTIMENT FLOW
+# # ==========================================
 
-def step22():
+# def step22():
 
-    from scripts.conversation_sentiment_pipeline import main
-    main()
+#     from scripts.conversation_sentiment_pipeline import main
+#     main()
 
-run_step("STEP 22 — CONVERSATION SENTIMENT FLOW", step22)
+# run_step("STEP 22 — CONVERSATION SENTIMENT FLOW", step22)
 
 
 # ==========================================
@@ -458,16 +468,16 @@ def step24():
 run_step("STEP 24 — SUCCESS FACTOR DETECTION", step24)
 
 
-# ==========================================
-# STEP 25 — TRANSFORMATION NARRATIVE EVOLUTION
-# ==========================================
+# # ==========================================
+# # STEP 25 — TRANSFORMATION NARRATIVE EVOLUTION
+# # ==========================================
 
-def step25():
+# def step25():
 
-    from scripts.narrative_evolution_pipeline import main
-    main()
+#     from scripts.narrative_evolution_pipeline import main
+#     main()
 
-run_step("STEP 25 — TRANSFORMATION NARRATIVE EVOLUTION", step25)
+# run_step("STEP 25 — TRANSFORMATION NARRATIVE EVOLUTION", step25)
 
 
 # ==========================================

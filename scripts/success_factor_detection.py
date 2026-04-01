@@ -100,6 +100,33 @@ class SuccessFactorDetection:
             ascending=[True, False]
         )
 
+        top = merged.head(20)
+        rows_to_save = []
+        for _, row in top.iterrows():
+            rows_to_save.append(
+                (
+                    int(row["bank_id"]),
+                    row["bank_name"],
+                    int(row["topic_id"]),
+                    row["keywords"],
+                    float(row["sentiment"]),
+                    int(row["volume"]),
+                )
+            )
+
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.executemany(
+            """
+            INSERT OR REPLACE INTO success_factors
+            (bank_id, bank_name, topic_id, keywords, sentiment, volume, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            """,
+            rows_to_save,
+        )
+        conn.commit()
+        conn.close()
+
         print("\nTop Transformation Success Factors:\n")
 
-        return merged.head(20)
+        return top

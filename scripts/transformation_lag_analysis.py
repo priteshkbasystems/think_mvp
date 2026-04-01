@@ -25,8 +25,6 @@ class TransformationLagAnalysis:
         FROM sentiment_scores
         """, conn)
 
-        conn.close()
-
         results = {}
 
         banks = narrative["bank_id"].unique()
@@ -67,5 +65,16 @@ class TransformationLagAnalysis:
                 "lag_years": best_lag,
                 "correlation": round(float(best_corr),3)
             }
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                INSERT OR REPLACE INTO transformation_lag_results
+                (bank_id, bank_name, lag_years, correlation, updated_at)
+                VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+                """,
+                (int(bank), bank_label, int(best_lag), round(float(best_corr), 3)),
+            )
 
+        conn.commit()
+        conn.close()
         return results
