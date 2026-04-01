@@ -1,10 +1,30 @@
 import sqlite3
+import os
 import numpy as np
 from collections import defaultdict
 from scipy.stats import pearsonr
 from sklearn.linear_model import LinearRegression
 
 DB_PATH = "/content/drive/MyDrive/THINK_MVP/04_Analysis_Output/transformation_cache.db"
+FALLBACK_DB_PATHS = [
+    "/content/think_mvp/transformation_cache.db",
+    "transformation_cache.db",
+]
+
+
+def get_db_connection():
+    paths = [DB_PATH] + FALLBACK_DB_PATHS
+    last_error = None
+    for path in paths:
+        try:
+            parent = os.path.dirname(path)
+            if parent:
+                os.makedirs(parent, exist_ok=True)
+            return sqlite3.connect(path)
+        except sqlite3.OperationalError as e:
+            last_error = e
+            continue
+    raise last_error
 
 
 # ==========================================
@@ -211,7 +231,7 @@ def generate_highlights(cursor):
 
 def main():
 
-    conn=sqlite3.connect(DB_PATH)
+    conn=get_db_connection()
     cursor=conn.cursor()
 
     print("Generating Topic Sentiment")
