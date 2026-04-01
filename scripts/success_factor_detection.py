@@ -107,7 +107,7 @@ class SuccessFactorDetection:
                 (
                     int(row["bank_id"]),
                     row["bank_name"],
-                    int(row["topic_id"]),
+                    row["topic_id"],
                     row["keywords"],
                     float(row["sentiment"]),
                     int(row["volume"]),
