@@ -13,7 +13,8 @@ FALLBACK_DB_PATHS = [
 
 
 def get_db_connection():
-    paths = [DB_PATH] + FALLBACK_DB_PATHS
+    
+    paths = DB_PATH
     last_error = None
     for path in paths:
         try:
@@ -21,9 +22,11 @@ def get_db_connection():
             if parent:
                 os.makedirs(parent, exist_ok=True)
             return sqlite3.connect(path)
-        except sqlite3.OperationalError as e:
+        except Exception as e:
             last_error = e
             continue
+    if last_error is None:
+        last_error = sqlite3.OperationalError("unable to open database file")
     raise last_error
 
 
