@@ -40,9 +40,8 @@ class TopicSentimentCorrelation:
         FROM complaint_topics
         """, conn)
 
-        conn.close()
-
         correlations = {}
+        cursor = conn.cursor()
 
         # -----------------------------------------
         # PROCESS PER BANK
@@ -97,7 +96,6 @@ class TopicSentimentCorrelation:
                 bank_name = corp_df["bank_name"].iloc[0]
                 corr_rounded = round(float(corr), 3)
                 correlations[bank_name] = corr_rounded
-                cursor = conn.cursor()
                 cursor.execute(
                     """
                     INSERT OR REPLACE INTO topic_sentiment_correlation
@@ -108,4 +106,5 @@ class TopicSentimentCorrelation:
                 )
 
         conn.commit()
+        conn.close()
         return correlations
