@@ -14,6 +14,14 @@ def normalize_rating(rating):
     """
     Convert rating (1–5) to sentiment scale (-1 to +1)
     """
+    if rating is None:
+        return 0.0
+    try:
+        rating = float(rating)
+    except (TypeError, ValueError):
+        return 0.0
+    if rating != rating:  # NaN
+        return 0.0
     return (rating - 3) / 2
 
 
@@ -22,7 +30,17 @@ def calculate_final_sentiment(text_sentiment, rating):
     Combine text sentiment with rating sentiment
     """
 
-    normalized_rating = normalize_rating(rating)
+    if rating is None:
+        rating_value = 3.0
+    else:
+        try:
+            rating_value = float(rating)
+        except (TypeError, ValueError):
+            rating_value = 3.0
+        if rating_value != rating_value:  # NaN
+            rating_value = 3.0
+
+    normalized_rating = normalize_rating(rating_value)
 
     # Fusion formula
     final_score = (
@@ -32,11 +50,11 @@ def calculate_final_sentiment(text_sentiment, rating):
 
     # Correction rule
     # If rating is very positive but sentiment is negative
-    if rating >= 4 and final_score < 0:
+    if rating_value >= 4 and final_score < 0:
         final_score = abs(final_score) * 0.5
 
     # If rating is very negative but sentiment positive
-    if rating <= 2 and final_score > 0:
+    if rating_value <= 2 and final_score > 0:
         final_score = -abs(final_score) * 0.5
 
     # Clamp score range
