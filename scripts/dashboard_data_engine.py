@@ -241,7 +241,7 @@ def main():
     generate_highlights(cursor)
 
     conn.commit()
-    conn.close()
+    # conn.close()
 
     print("Dashboard data generation completed")
 
