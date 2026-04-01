@@ -365,7 +365,6 @@ class FinancialExtractor:
 
         for bank_name, year, period_type, period_label, file_path in rows:
             print(f"\n[PDF] {bank_name} | {year} | {period_label} | {file_path}")
-            cursor.execute("INSERT OR IGNORE INTO banks (bank_name) VALUES (?)", (bank_name,))
             cursor.execute("SELECT bank_id FROM banks WHERE bank_name=?", (bank_name,))
             bank_id_row = cursor.fetchone()
             bank_id = bank_id_row[0] if bank_id_row else None

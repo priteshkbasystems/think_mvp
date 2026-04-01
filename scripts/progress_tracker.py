@@ -11,9 +11,11 @@ class ProgressTracker:
         self.cursor = self.conn.cursor()
 
     def get_progress(self, step, bank, year):
-        self.cursor.execute("INSERT OR IGNORE INTO banks (bank_name) VALUES (?)", (bank,))
         self.cursor.execute("SELECT bank_id FROM banks WHERE bank_name=?", (bank,))
-        bank_id = self.cursor.fetchone()[0]
+        row = self.cursor.fetchone()
+        if not row:
+            return 0
+        bank_id = row[0]
 
         self.cursor.execute("""
         SELECT last_processed_index
@@ -29,9 +31,11 @@ class ProgressTracker:
         return 0
 
     def save_progress(self, step, bank, year, index):
-        self.cursor.execute("INSERT OR IGNORE INTO banks (bank_name) VALUES (?)", (bank,))
         self.cursor.execute("SELECT bank_id FROM banks WHERE bank_name=?", (bank,))
-        bank_id = self.cursor.fetchone()[0]
+        row = self.cursor.fetchone()
+        if not row:
+            return
+        bank_id = row[0]
 
         self.cursor.execute("""
         INSERT OR REPLACE INTO step_progress

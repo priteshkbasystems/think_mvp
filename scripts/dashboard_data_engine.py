@@ -186,18 +186,15 @@ def generate_prediction(cursor):
 def generate_highlights(cursor):
 
     cursor.execute("""
-    SELECT file_path, year
-    FROM pdf_cache
+    SELECT DISTINCT bank_id, bank_name, year, file_path
+    FROM corporate_document_sentiment_rollup
     """)
 
     rows=cursor.fetchall()
 
-    for path,year in rows:
-
-        bank=path.split("/")[-4].replace("_"," ")
-        cursor.execute("INSERT OR IGNORE INTO banks (bank_name) VALUES (?)", (bank,))
-        cursor.execute("SELECT bank_id FROM banks WHERE bank_name=?", (bank,))
-        bank_id = cursor.fetchone()[0]
+    for bank_id, bank, year, _path in rows:
+        if bank_id is None:
+            continue
 
         highlight=f"Major digital initiative mentioned in {year} report"
 

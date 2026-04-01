@@ -24,9 +24,11 @@ def generate_narrative_scores():
     rows = cursor.fetchall()
 
     for bank_name, year, avg_doc_signed in rows:
-        cursor.execute("INSERT OR IGNORE INTO banks (bank_name) VALUES (?)", (bank_name,))
         cursor.execute("SELECT bank_id FROM banks WHERE bank_name=?", (bank_name,))
-        bank_id = cursor.fetchone()[0]
+        row = cursor.fetchone()
+        if not row:
+            continue
+        bank_id = row[0]
 
         if avg_doc_signed is None:
             continue

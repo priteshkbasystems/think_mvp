@@ -138,13 +138,6 @@ def _migrate_bank_id_across_tables(cursor):
         if "bank_name" in cols:
             bank_tables.append((table, cols))
 
-    # Ensure banks contains all names from bank_name-bearing tables
-    for table, _ in bank_tables:
-        cursor.execute(f"SELECT DISTINCT bank_name FROM {table} WHERE bank_name IS NOT NULL")
-        for (name,) in cursor.fetchall():
-            if name:
-                cursor.execute("INSERT OR IGNORE INTO banks (bank_name) VALUES (?)", (name,))
-
     # Add bank_id + backfill + auto-fill trigger for each table
     for table, cols in bank_tables:
         if table != "banks" and "bank_id" not in cols:
@@ -172,7 +165,6 @@ def _migrate_bank_id_across_tables(cursor):
                 AFTER INSERT ON {table}
                 WHEN NEW.bank_id IS NULL AND NEW.bank_name IS NOT NULL
                 BEGIN
-                    INSERT OR IGNORE INTO banks (bank_name) VALUES (NEW.bank_name);
                     UPDATE {table}
                     SET bank_id = (SELECT bank_id FROM banks WHERE bank_name = NEW.bank_name)
                     WHERE rowid = NEW.rowid;
@@ -591,9 +583,11 @@ def save_corporate_hierarchy_sentiment(conn, bank_name, year, file_path, result)
     """result: dict with keys sentences, pages, document from CorporateSentimentAnalyzer.analyze_pages."""
     delete_corporate_hierarchy_for_file(conn, bank_name, year, file_path)
     cursor = conn.cursor()
-    cursor.execute("INSERT OR IGNORE INTO banks (bank_name) VALUES (?)", (bank_name,))
     cursor.execute("SELECT bank_id FROM banks WHERE bank_name=?", (bank_name,))
-    bank_id = cursor.fetchone()[0]
+    row = cursor.fetchone()
+    if not row:
+        return
+    bank_id = row[0]
 
     for row in result["sentences"]:
         cursor.execute(
@@ -663,10 +657,8 @@ def save_corporate_hierarchy_sentiment(conn, bank_name, year, file_path, result)
 def register_bank(bank_name):
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute("INSERT OR IGNORE INTO banks (bank_name) VALUES (?)", (bank_name,))
     cursor.execute("SELECT bank_id FROM banks WHERE bank_name=?", (bank_name,))
     row = cursor.fetchone()
-    conn.commit()
     conn.close()
     return row[0] if row else None
 
@@ -686,9 +678,12 @@ def get_bank_id(bank_name):
 def save_stock_return(bank, year, value):
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute("INSERT OR IGNORE INTO banks (bank_name) VALUES (?)", (bank,))
     cursor.execute("SELECT bank_id FROM banks WHERE bank_name=?", (bank,))
-    bank_id = cursor.fetchone()[0]
+    row = cursor.fetchone()
+    if not row:
+        conn.close()
+        return
+    bank_id = row[0]
     cursor.execute("""
     INSERT OR REPLACE INTO stock_returns (bank_id, bank_name, year, return)
     VALUES (?, ?, ?, ?)
@@ -703,9 +698,12 @@ def save_stock_return(bank, year, value):
 def save_sentiment_score(bank, year, sentiment, contradiction):
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute("INSERT OR IGNORE INTO banks (bank_name) VALUES (?)", (bank,))
     cursor.execute("SELECT bank_id FROM banks WHERE bank_name=?", (bank,))
-    bank_id = cursor.fetchone()[0]
+    row = cursor.fetchone()
+    if not row:
+        conn.close()
+        return
+    bank_id = row[0]
     cursor.execute("""
     INSERT OR REPLACE INTO sentiment_scores (bank_id, bank_name, year, sentiment, contradiction_ratio)
     VALUES (?, ?, ?, ?, ?)
@@ -720,9 +718,12 @@ def save_review_sentiment(bank, year, text, rating, score, label):
     cursor = conn.cursor()
 
     h = hashlib.md5(text.encode("utf-8")).hexdigest()
-    cursor.execute("INSERT OR IGNORE INTO banks (bank_name) VALUES (?)", (bank,))
     cursor.execute("SELECT bank_id FROM banks WHERE bank_name=?", (bank,))
-    bank_id = cursor.fetchone()[0]
+    row = cursor.fetchone()
+    if not row:
+        conn.close()
+        return
+    bank_id = row[0]
 
     cursor.execute("""
     INSERT OR IGNORE INTO review_sentiments
@@ -742,9 +743,12 @@ def save_sentiment_taxonomy(bank, year, text, emotion, category):
     conn = get_connection()
     cursor = conn.cursor()
 
-    cursor.execute("INSERT OR IGNORE INTO banks (bank_name) VALUES (?)", (bank,))
     cursor.execute("SELECT bank_id FROM banks WHERE bank_name=?", (bank,))
-    bank_id = cursor.fetchone()[0]
+    row = cursor.fetchone()
+    if not row:
+        conn.close()
+        return
+    bank_id = row[0]
     cursor.execute("""
     INSERT INTO sentiment_taxonomy
     (bank_id, bank_name, year, review_text, emotion, category)
@@ -872,9 +876,12 @@ def save_corporate_topic_sentiment(bank_name, year, topic_scores):
     conn = get_connection()
     cursor = conn.cursor()
 
-    cursor.execute("INSERT OR IGNORE INTO banks (bank_name) VALUES (?)", (bank_name,))
     cursor.execute("SELECT bank_id FROM banks WHERE bank_name=?", (bank_name,))
-    bank_id = cursor.fetchone()[0]
+    row = cursor.fetchone()
+    if not row:
+        conn.close()
+        return
+    bank_id = row[0]
     for topic, score in topic_scores.items():
 
         cursor.execute("""
