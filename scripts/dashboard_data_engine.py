@@ -240,7 +240,7 @@ def main():
     print("Generating Narrative Highlights")
     generate_highlights(cursor)
 
-    conn.commit()
+    # conn.commit()
     # conn.close()
 
     print("Dashboard data generation completed")
