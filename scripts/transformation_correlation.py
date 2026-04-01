@@ -2,14 +2,10 @@ import os
 import re
 import json
 import numpy as np
-from PyPDF2 import PdfReader
 from scipy.stats import pearsonr
 
 from sentence_transformers import SentenceTransformer
 from sklearn.metrics.pairwise import cosine_similarity
-
-import pytesseract
-from pdf2image import convert_from_path
 
 from scripts.db_cache import (
     init_db,
@@ -18,8 +14,11 @@ from scripts.db_cache import (
     update_cache,
     get_embedding,
     save_embedding,
-    get_cached_pdf_text,
-    save_pdf_text
+)
+from scripts.corporate_pdf_utils import (
+    discover_bank_corporate_folders,
+    extract_text_from_pdf,
+    extract_pdf_pages,
 )
 
 from trend_analysis import main as run_trend_engine
@@ -35,50 +34,6 @@ TREND_OUTPUT_PATH = "/content/drive/MyDrive/THINK_MVP/04_Analysis_Output"
 FINAL_OUTPUT_PATH = "/content/drive/MyDrive/THINK_MVP/04_Analysis_Output/transformation_correlation_report.txt"
 
 MAX_SENTENCES = 300
-
-# ==========================================
-# DISCOVER BANKS (FIXED)
-# ==========================================
-
-def discover_banks(base_path):
-
-    banks = {}
-
-    if not os.path.exists(base_path):
-        print("❌ Base path not found:", base_path)
-        return banks
-
-    for bank_folder in os.listdir(base_path):
-
-        bank_path = os.path.join(base_path, bank_folder)
-
-        if not os.path.isdir(bank_path):
-            continue
-
-        components = {
-            "annual_reports": None,
-            "investor_presentations": None
-        }
-
-        for sub in os.listdir(bank_path):
-
-            sub_path = os.path.join(bank_path, sub)
-
-            if not os.path.isdir(sub_path):
-                continue
-
-            sub_lower = sub.lower()
-
-            if sub_lower == "annual_reports":
-                components["annual_reports"] = sub_path
-
-            elif sub_lower in ["investor_presentations", "investors_presentations"]:
-                components["investor_presentations"] = sub_path
-
-        banks[bank_folder] = components
-
-    return banks
-
 
 # ==========================================
 # TRANSFORMATION THEMES
@@ -117,85 +72,6 @@ print("Loading AI transformation model...")
 embedding_model = SentenceTransformer("all-MiniLM-L6-v2")
 THEME_EMBEDDINGS = embedding_model.encode(TRANSFORMATION_THEMES)
 print("Model ready.")
-
-# ==========================================
-# OCR
-# ==========================================
-
-def extract_text_with_ocr(pdf_path):
-
-    text = ""
-
-    try:
-        images = convert_from_path(pdf_path, dpi=200)
-
-        for img in images:
-            text += pytesseract.image_to_string(img)
-
-    except:
-        print("OCR failed:", pdf_path)
-
-    return text.lower()
-
-
-# ==========================================
-# PDF TEXT EXTRACTION (CACHED)
-# ==========================================
-
-def extract_text_from_pdf(pdf_path):
-
-    cached_text = get_cached_pdf_text(pdf_path)
-
-    if cached_text:
-        print("✔ Using cached text:", os.path.basename(pdf_path))
-        return cached_text
-
-    print("📄 Extracting text:", os.path.basename(pdf_path))
-
-    try:
-        reader = PdfReader(pdf_path)
-        text = ""
-
-        for page in reader.pages:
-            text += page.extract_text() or ""
-
-        text = text.lower()
-
-        if len(text.strip()) < 100:
-            print("⚠ OCR fallback:", os.path.basename(pdf_path))
-            text = extract_text_with_ocr(pdf_path)
-
-        save_pdf_text(pdf_path, text)
-
-        return text
-
-    except:
-        print("❌ Failed to read PDF:", pdf_path)
-        return ""
-
-
-def extract_pdf_pages(pdf_path):
-    """
-    Per-page text for sentence/page/document rollups (does not use pdf_text_cache
-    blob; reads PDF structure from disk).
-    """
-    try:
-        reader = PdfReader(pdf_path)
-        pages = []
-        for i, page in enumerate(reader.pages):
-            t = page.extract_text() or ""
-            if t.strip():
-                pages.append((i + 1, t))
-        full = "".join(p[1] for p in pages)
-        if len(full.strip()) < 100:
-            ocr = extract_text_with_ocr(pdf_path)
-            if ocr.strip():
-                return [(1, ocr)]
-            return []
-        return pages
-    except Exception:
-        return []
-
 
 # ==========================================
 # FILE CACHE CHECK
@@ -376,7 +252,7 @@ def main():
 
     print("\n🔎 Running Transformation Engine\n")
 
-    banks = discover_banks(BASE_CORP_PATH)
+    banks = discover_bank_corporate_folders(BASE_CORP_PATH)
     sentiments = load_sentiment_trend()
 
     report = []
