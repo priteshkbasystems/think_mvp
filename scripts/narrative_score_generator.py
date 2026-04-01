@@ -13,27 +13,34 @@ def generate_narrative_scores():
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
 
-    cursor.execute("""
-        SELECT file_path, year, score
-        FROM pdf_cache
-    """)
+    cursor.execute(
+        """
+        SELECT bank_name, year, AVG(doc_mean_signed) AS avg_doc_signed
+        FROM corporate_document_sentiment_rollup
+        GROUP BY bank_name, year
+        """
+    )
 
     rows = cursor.fetchall()
 
-    for file_path, year, score in rows:
-
-        bank_name = file_path.split("/")[-4].replace("_"," ")
+    for bank_name, year, avg_doc_signed in rows:
         cursor.execute("INSERT OR IGNORE INTO banks (bank_name) VALUES (?)", (bank_name,))
         cursor.execute("SELECT bank_id FROM banks WHERE bank_name=?", (bank_name,))
         bank_id = cursor.fetchone()[0]
 
-        narrative_score = round(score * 100)
+        if avg_doc_signed is None:
+            continue
 
-        cursor.execute("""
-        INSERT OR REPLACE INTO narrative_scores
-        (bank_id, bank_name, year, score)
-        VALUES (?, ?, ?, ?)
-        """, (bank_id, bank_name, year, narrative_score))
+        narrative_score = round(((float(avg_doc_signed) + 1.0) / 2.0) * 100.0, 2)
+
+        cursor.execute(
+            """
+            INSERT OR REPLACE INTO narrative_scores
+            (bank_id, bank_name, year, score)
+            VALUES (?, ?, ?, ?)
+            """,
+            (bank_id, bank_name, int(year), narrative_score),
+        )
 
     conn.commit()
     conn.close()
