@@ -13,9 +13,34 @@ FALLBACK_DB_PATHS = [
 
 
 def get_db_connection():
-    
-    conn = sqlite3.connect(DB_PATH)
-    return conn
+    env_db = os.getenv("THINK_MVP_DB_PATH")
+    candidates = [p for p in [env_db, DB_PATH] + FALLBACK_DB_PATHS if p]
+
+    # Prefer an existing non-empty DB so reads are not against a blank file.
+    existing = []
+    for p in candidates:
+        try:
+            if os.path.exists(p):
+                existing.append((os.path.getsize(p), p))
+        except Exception:
+            pass
+    if existing:
+        _, best_path = max(existing, key=lambda x: x[0])
+        return sqlite3.connect(best_path)
+
+    # If nothing exists yet, create at first writable candidate.
+    last_error = None
+    for p in candidates:
+        try:
+            parent = os.path.dirname(p)
+            if parent:
+                os.makedirs(parent, exist_ok=True)
+            return sqlite3.connect(p)
+        except Exception as e:
+            last_error = e
+    if last_error:
+        raise last_error
+    return sqlite3.connect(DB_PATH)
 
 
 # ==========================================
@@ -54,6 +79,7 @@ def generate_topic_sentiment(cursor):
                 topic_data[(bank_id, bank, topic)]["sentiment"] += score
 
 
+    inserted = 0
     for (bank_id, bank, topic), data in topic_data.items():
 
         cursor.execute("""
@@ -61,6 +87,8 @@ def generate_topic_sentiment(cursor):
         (bank_id, bank_name, topic_id, keywords, review_count)
         VALUES (?,?,?,?,?)
         """,(bank_id, bank, topic, topic, data["count"]))
+        inserted += 1
+    print(f"Inserted complaint_topics rows: {inserted}")
 
 
 # ==========================================
@@ -72,6 +100,7 @@ def compute_correlation(cursor):
     cursor.execute("SELECT DISTINCT bank_id, bank_name FROM narrative_scores")
     banks=[(r[0], r[1]) for r in cursor.fetchall()]
 
+    inserted = 0
     for bank_id, bank in banks:
 
         cursor.execute("""
@@ -101,6 +130,8 @@ def compute_correlation(cursor):
         (bank_id, bank_name, correlation)
         VALUES (?,?,?)
         """,(bank_id, bank, float(r)))
+        inserted += 1
+    print(f"Upserted narrative_sentiment_correlation rows: {inserted}")
 
 
 # ==========================================
@@ -112,6 +143,7 @@ def compute_lag(cursor):
     cursor.execute("SELECT DISTINCT bank_id, bank_name FROM narrative_scores")
     banks=[(r[0], r[1]) for r in cursor.fetchall()]
 
+    inserted = 0
     for bank_id, bank in banks:
 
         cursor.execute("""
@@ -152,6 +184,8 @@ def compute_lag(cursor):
             (bank_id, bank_name, lag_months)
             VALUES (?,?,?)
             """,(bank_id, bank, best_lag*12))
+            inserted += 1
+    print(f"Upserted narrative_lag rows: {inserted}")
 
 
 # ==========================================
@@ -163,6 +197,7 @@ def generate_prediction(cursor):
     cursor.execute("SELECT DISTINCT bank_id, bank_name FROM sentiment_scores")
     banks=[(r[0], r[1]) for r in cursor.fetchall()]
 
+    inserted = 0
     for bank_id, bank in banks:
 
         cursor.execute("""
@@ -188,6 +223,8 @@ def generate_prediction(cursor):
         (bank_id, bank_name, year, predicted_sentiment)
         VALUES (?,?,?,?)
         """,(bank_id, bank, 2026, float(pred)))
+        inserted += 1
+    print(f"Upserted sentiment_predictions rows: {inserted}")
 
 
 # ==========================================
@@ -203,6 +240,7 @@ def generate_highlights(cursor):
 
     rows=cursor.fetchall()
 
+    inserted = 0
     for bank_id, bank, year, _path in rows:
         if bank_id is None:
             continue
@@ -214,6 +252,8 @@ def generate_highlights(cursor):
         (bank_id, bank_name, year, highlight)
         VALUES (?,?,?,?)
         """,(bank_id, bank, year, highlight))
+        inserted += 1
+    print(f"Inserted narrative_highlights rows: {inserted}")
 
 
 # ==========================================
@@ -240,8 +280,8 @@ def main():
     print("Generating Narrative Highlights")
     generate_highlights(cursor)
 
-    # conn.commit()
-    # conn.close()
+    conn.commit()
+    conn.close()
 
     print("Dashboard data generation completed")
 
