@@ -2,7 +2,12 @@ import os
 import sqlite3
 import pandas as pd
 
-from scripts.db_cache import init_db, assign_bank_color_if_missing, ensure_bank_registered_with_color
+from scripts.db_cache import (
+    init_db,
+    assign_bank_color_if_missing,
+    ensure_bank_registered_with_color,
+    normalize_bank_display_name,
+)
 
 DB_PATH = "/content/drive/MyDrive/THINK_MVP/04_Analysis_Output/transformation_cache.db"
 BASE_CORP_PATH = "/content/drive/MyDrive/THINK_MVP/01_Corporate_Documents"
@@ -20,15 +25,15 @@ _EXCLUDED_TOP_LEVEL = frozenset(
 )
 
 
-def canonical_bank_name(folder_name):
-    return folder_name.replace("_", " ").strip()
-
-
 # ---------------------------------------
 # Save yearly stock return
 # ---------------------------------------
 
 def save_stock_return(bank_name, year, value):
+
+    bank_name = normalize_bank_display_name(bank_name)
+    if not bank_name:
+        return
 
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
@@ -149,7 +154,9 @@ def discover_banks(base_path):
             if f.endswith(".xlsx") or f.endswith(".csv"):
                 stock_file = os.path.join(stock_folder, f)
 
-        display = canonical_bank_name(name)
+        display = normalize_bank_display_name(name)
+        if not display:
+            continue
 
         banks[display] = {
             "folder": path,

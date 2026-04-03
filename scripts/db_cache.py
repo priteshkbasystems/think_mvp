@@ -8,6 +8,16 @@ from decimal import Decimal, InvalidOperation
 
 DB_PATH = "/content/drive/MyDrive/THINK_MVP/04_Analysis_Output/transformation_cache.db"
 
+
+def normalize_bank_display_name(name):
+    """e.g. Bangkok_Bank / folder names -> Bangkok Bank (spaces, trimmed)."""
+    if name is None:
+        return None
+    s = str(name).replace("_", " ")
+    s = re.sub(r"\s+", " ", s).strip()
+    return s or None
+
+
 # Min Euclidean distance in RGB (0–255) between any two bank colors.
 _MIN_BANK_COLOR_DISTANCE = 78.0
 _MAX_COLOR_PICK_ATTEMPTS = 800
@@ -92,6 +102,9 @@ def _collect_existing_bank_colors(cursor, exclude_bank_name=None):
 
 def assign_bank_color_if_missing(cursor, bank_name):
     """Assign validated distinct hex color for one bank if color is NULL/empty."""
+    bank_name = normalize_bank_display_name(bank_name)
+    if not bank_name:
+        return
     cursor.execute(
         "SELECT color FROM banks WHERE bank_name=?",
         (bank_name,),
@@ -122,6 +135,9 @@ def backfill_all_bank_colors(cursor):
 
 def ensure_bank_registered_with_color(bank_name):
     """INSERT bank if missing and assign color when needed (single connection)."""
+    bank_name = normalize_bank_display_name(bank_name)
+    if not bank_name:
+        return
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute("INSERT OR IGNORE INTO banks (bank_name) VALUES (?)", (bank_name,))
