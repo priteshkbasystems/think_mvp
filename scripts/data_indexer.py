@@ -12,7 +12,7 @@ from scripts.db_cache import (
 DB_PATH = "/content/drive/MyDrive/THINK_MVP/04_Analysis_Output/transformation_cache.db"
 BASE_CORP_PATH = "/content/drive/MyDrive/THINK_MVP/01_Corporate_Documents"
 
-# Match trend_analysis / market_correlation: one DB row per bank (spaces, not underscores).
+# Match trend_analysis: one DB row per bank (spaces, not underscores).
 # Skip top-level dirs that are not bank roots (see discover_banks).
 _EXCLUDED_TOP_LEVEL = frozenset(
     name.lower()

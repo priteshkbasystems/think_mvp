@@ -21,7 +21,6 @@ This document is written so that ChatGPT (or any LLM) can quickly understand the
   - `root_cause_analyzer.py`: Explains *why* sentiment is high/low (aggregates issues, contradictions, etc.).
   - `db_cache.py`: Central SQLite schema + caching helpers for scores, reviews, embeddings, and dashboard tables.
   - `dashboard_data_engine.py`: Reads from the cache DB and generates topic sentiment, correlations, lags, predictions, highlights for dashboards.
-  - `market_correlation.py`: Strategic market & sentiment intelligence; correlates sentiment with stock returns and transformation intensity from PDFs.
   - `data_indexer.py`: Indexes raw source data into a consistent structure for downstream steps.
   - `transformation_correlation.py`: Links transformation/narrative measures with sentiment and stock metrics.
   - `narrative_score_generator.py`: Generates narrative / transformation scores and stores them.
@@ -29,7 +28,6 @@ This document is written so that ChatGPT (or any LLM) can quickly understand the
   - `strategic_market_intelligence.py`: Wraps market and transformation analytics into a report.
   - `topic_discovery.py`: Additional topic / theme discovery logic (beyond simple KMeans topics).
   - `model_manager.py`: Central utilities for loading / managing models and re-use.
-  - `market_correlation.py`: Detailed PDF + stock-time-series correlation analysis (transformation vs sentiment/returns).
   - `env_check.py`, `input_handler.py`, `test_module.py`, `test_sentiments.py`: Utility / testing / environment-check scripts.
   - `scripts/utils/`
     - `sentiment_utils.py`: Utilities to combine text sentiment with star ratings and classify final sentiment labels.
@@ -51,7 +49,7 @@ High-level steps:
    - Uses `scripts.processor.TextProcessor` to get an *overall yearly sentiment* score.
    - Writes:
      - `bank_trend_report.txt`
-     - `bank_trend_data.json` (used later by `market_correlation.py` and others).
+     - `bank_trend_data.json` (used later by downstream market/sentiment steps).
 3. **Transformation Intelligence** – `scripts.transformation_correlation.main`
    - Analyzes transformation/narrative metrics vs sentiment/stock performance.
    - Writes correlation/insight reports and/or caches results in SQLite.
@@ -230,7 +228,7 @@ These are consumed by transformation/market/dashboard scripts to avoid recomputa
 - **Usage**:
   - `scripts/processor.TextProcessor`:
     - `encode(texts)` to obtain embeddings per review for clustering and topic/keyword analysis.
-  - `scripts/db_cache.py` and `scripts/market_correlation.py`:
+  - `scripts/db_cache.py` and `scripts/transformation_correlation.py`:
     - Separate **embedding cache** tables / helpers store arbitrary embeddings for PDF sentences and transformation analysis.
 - **Purpose**:
   - Provide semantically meaningful vector representations of reviews (and sometimes PDF sentences) which can be clustered or similarity-searched.
@@ -263,7 +261,7 @@ These are consumed by transformation/market/dashboard scripts to avoid recomputa
 
 ### 4.6 Transformation / narrative embedding model
 
-- **File**: `scripts/market_correlation.py`
+- **File**: `scripts/transformation_correlation.py`
 - **Underlying model**: `SentenceTransformer("all-MiniLM-L6-v2")`
 - **Usage**:
   - Compute embeddings for:
@@ -307,7 +305,7 @@ All outputs are persisted back into:
    - All review-based metrics ultimately come from `scripts/processor.TextProcessor.process`.
 3. **Use `db_cache.py` + `dashboard_data_engine.py` to understand dashboard metrics**:
    - Tables define what is available to BI/UX; functions define how each metric is derived.
-4. **Use `market_correlation.py` and `strategic_market_intelligence.py` for market/transformation logic**:
+4. **Use `transformation_correlation.py` and `strategic_market_intelligence.py` for market/transformation logic**:
    - They explain how narrative intensity and sentiment relate to stock returns.
 5. **Treat `models/` as the canonical place for ML components**:
    - Sentiment, embeddings, and topics are all wrapped under this folder and reused across scripts.

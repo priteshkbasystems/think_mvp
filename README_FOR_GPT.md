@@ -150,7 +150,6 @@ The main orchestration entrypoint is `pipeline_runner.py`. Individual experiment
   - `data_indexer.py` – Discovers banks and indexes stock price files into yearly returns in DB.
   - `transformation_correlation.py` – Heavy PDF pipeline: extracts text/ocr, scores “digital transformation” intensity per bank/year, caches in DB, runs sentiment trend engine, correlates transformation vs sentiment, writes report & JSON.
   - `dashboard_data_engine.py` – Populates dashboard‑oriented tables in DB from other tables (complaint topics, narrative vs sentiment correlation, lag, predictions, highlights).
-  - `market_correlation.py` – (Legacy/alternate) transformation correlation engine (similar scope to `transformation_correlation.py`; uses its own embedding cache).
   - `narrative_score_generator.py` – Converts `pdf_cache` scores into per‑bank narrative scores table.
   - `strategic_market_intelligence.py` – Merges sentiment trend JSON with stock returns from DB and creates a textual strategic market intelligence report.
   - `ai_insight_generator.py` – Higher‑level “AI executive insights” report combining sentiment and market labels.
@@ -228,8 +227,8 @@ The canonical schema is created in `scripts/db_cache.py:init_db()` and partially
   - `embedding` (BLOB) – Serialized float32 vector.  
   - `created_at` (TIMESTAMP)  
   - **Purpose**: Cache SentenceTransformer embeddings of corporate text to avoid recompute.  
-  - **Writes**: `db_cache.save_embedding`, `market_correlation.save_embedding`.  
-  - **Reads**: `db_cache.get_embedding`, `market_correlation.get_embedding`.
+  - **Writes**: `db_cache.save_embedding`.  
+  - **Reads**: `db_cache.get_embedding`.
 
 - **`narrative_scores`**  
   - `bank_name` (TEXT)  
@@ -261,7 +260,7 @@ The canonical schema is created in `scripts/db_cache.py:init_db()` and partially
   - `bank_name` (TEXT)  
   - `year` (INTEGER)  
   - `highlight` (TEXT) – Simple curated highlight string per document/year.  
-  - **Writes**: `dashboard_data_engine.generate_highlights` and/or `market_correlation` equivalents.
+  - **Writes**: `dashboard_data_engine.generate_highlights`.
 
 ---
 
@@ -295,8 +294,8 @@ The canonical schema is created in `scripts/db_cache.py:init_db()` and partially
   - Model: `SentenceTransformer("all-MiniLM-L6-v2")`.  
   - Use: Map negative reviews to one of several predefined root‑cause themes via cosine similarity (Performance, App Crashes, Login, etc.).
 
-- **`scripts/transformation_correlation.py` / `scripts/market_correlation.py`**  
-  - Model: `SentenceTransformer("all-MiniLM-L6-v2")` and `"all-MiniLM-L6-v2"` / `"all-MiniLM-L6-v2"` variants.  
+- **`scripts/transformation_correlation.py`**  
+  - Model: `SentenceTransformer("all-MiniLM-L6-v2")`.  
   - Use: Embed PDF sentences and fixed “transformation theme” phrases, compute cosine similarity to score digital transformation / narrative intensity per bank/year.
 
 - **`scripts/model_manager.py`**  
@@ -554,15 +553,6 @@ Key functions (high level; bodies are long but pattern is repeated):
   - Returns full multi‑bank report string.  
 - **`main()`**  
   - Loads data, calls `generate_insights`, writes `executive_ai_insights.txt`.
-
-### `scripts/market_correlation.py` (legacy / alternate)
-
-- Very similar goals to `transformation_correlation.py`:  
-  - Embeds transformation themes (`TRANSFORMATION_THEMES`).  
-  - Extracts/ocr PDFs; uses `embedding_cache` via local `get_embedding`/`save_embedding`.  
-  - Correlates transformation scores with sentiment (using `bank_trend_data.json` and DB).  
-  - Writes an intelligence report (`strategic_market_intelligence_report.txt`).  
-- DB usage mirrors `embedding_cache` and may duplicate parts of the newer transformation engine.
 
 ### `main.py`
 
