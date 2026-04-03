@@ -1,10 +1,133 @@
 import os
+import random
+import re
 import sqlite3
 import hashlib
 import numpy as np
 from decimal import Decimal, InvalidOperation
 
 DB_PATH = "/content/drive/MyDrive/THINK_MVP/04_Analysis_Output/transformation_cache.db"
+
+# Min Euclidean distance in RGB (0–255) between any two bank colors.
+_MIN_BANK_COLOR_DISTANCE = 78.0
+_MAX_COLOR_PICK_ATTEMPTS = 800
+
+
+def _parse_hex_color(value):
+    if not value or not isinstance(value, str):
+        return None
+    m = re.match(r"^#?([0-9a-fA-F]{6})$", value.strip())
+    if not m:
+        return None
+    h = m.group(1)
+    return int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+
+
+def _is_black_white_or_gray_shade(r, g, b):
+    """Reject near-black, near-white, and low-chroma (gray) shades."""
+    mx, mn = max(r, g, b), min(r, g, b)
+    chroma = mx - mn
+    # sRGB relative luminance (0..1)
+    lum = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255.0
+    if lum <= 0.10:
+        return True
+    if lum >= 0.93:
+        return True
+    if mx <= 42 and mn <= 42:
+        return True
+    if mn >= 218 and mx >= 218:
+        return True
+    if chroma < 52:
+        return True
+    return False
+
+
+def _rgb_distance(a, b):
+    return float(
+        ((a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2 + (a[2] - b[2]) ** 2) ** 0.5
+    )
+
+
+def _pick_distinct_hex(existing_rgbs):
+    """Return a new #RRGGBB color far from existing_rgbs and not B/W/gray."""
+    for _ in range(_MAX_COLOR_PICK_ATTEMPTS):
+        rgb = (random.randint(0, 255), random.randint(0, 255), random.randint(0, 255))
+        if _is_black_white_or_gray_shade(*rgb):
+            continue
+        if all(_rgb_distance(rgb, e) >= _MIN_BANK_COLOR_DISTANCE for e in existing_rgbs):
+            return f"#{rgb[0]:02X}{rgb[1]:02X}{rgb[2]:02X}"
+    # Relax distance slightly if palette is crowded
+    for _ in range(_MAX_COLOR_PICK_ATTEMPTS):
+        rgb = (random.randint(0, 255), random.randint(0, 255), random.randint(0, 255))
+        if _is_black_white_or_gray_shade(*rgb):
+            continue
+        if all(_rgb_distance(rgb, e) >= _MIN_BANK_COLOR_DISTANCE * 0.65 for e in existing_rgbs):
+            return f"#{rgb[0]:02X}{rgb[1]:02X}{rgb[2]:02X}"
+    rgb = (random.randint(60, 220), random.randint(60, 220), random.randint(60, 220))
+    while _is_black_white_or_gray_shade(*rgb):
+        rgb = (random.randint(0, 255), random.randint(0, 255), random.randint(0, 255))
+    return f"#{rgb[0]:02X}{rgb[1]:02X}{rgb[2]:02X}"
+
+
+def _ensure_banks_color_column(cursor):
+    cursor.execute("PRAGMA table_info(banks)")
+    cols = {r[1] for r in cursor.fetchall()}
+    if "color" not in cols:
+        cursor.execute("ALTER TABLE banks ADD COLUMN color TEXT")
+
+
+def _collect_existing_bank_colors(cursor, exclude_bank_name=None):
+    cursor.execute(
+        "SELECT bank_name, color FROM banks WHERE color IS NOT NULL AND TRIM(color) != ''"
+    )
+    existing_rgbs = []
+    for bn, col in cursor.fetchall():
+        if exclude_bank_name and bn == exclude_bank_name:
+            continue
+        parsed = _parse_hex_color(col)
+        if parsed:
+            existing_rgbs.append(parsed)
+    return existing_rgbs
+
+
+def assign_bank_color_if_missing(cursor, bank_name):
+    """Assign validated distinct hex color for one bank if color is NULL/empty."""
+    cursor.execute(
+        "SELECT color FROM banks WHERE bank_name=?",
+        (bank_name,),
+    )
+    row = cursor.fetchone()
+    if not row:
+        return
+    cur = row[0]
+    if cur and str(cur).strip():
+        return
+    existing = _collect_existing_bank_colors(cursor, exclude_bank_name=bank_name)
+    hex_color = _pick_distinct_hex(existing)
+    cursor.execute(
+        "UPDATE banks SET color=? WHERE bank_name=?",
+        (hex_color, bank_name),
+    )
+
+
+def backfill_all_bank_colors(cursor):
+    """Assign colors for every bank missing one, ordered by bank_id for stability."""
+    cursor.execute(
+        "SELECT bank_name FROM banks WHERE color IS NULL OR TRIM(color) = '' ORDER BY bank_id, bank_name"
+    )
+    names = [r[0] for r in cursor.fetchall()]
+    for name in names:
+        assign_bank_color_if_missing(cursor, name)
+
+
+def ensure_bank_registered_with_color(bank_name):
+    """INSERT bank if missing and assign color when needed (single connection)."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("INSERT OR IGNORE INTO banks (bank_name) VALUES (?)", (bank_name,))
+    assign_bank_color_if_missing(cursor, bank_name)
+    conn.commit()
+    conn.close()
 
 
 def _migrate_financial_metrics_to_text_if_needed(cursor):
@@ -186,9 +309,11 @@ def init_db():
     # ------------------------------
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS banks (
-        bank_name TEXT PRIMARY KEY
+        bank_name TEXT PRIMARY KEY,
+        color TEXT
     )
     """)
+    _ensure_banks_color_column(cursor)
 
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS stock_returns (
@@ -547,6 +672,7 @@ def init_db():
     """)
     _migrate_financial_metrics_to_text_if_needed(cursor)
     _migrate_bank_id_across_tables(cursor)
+    backfill_all_bank_colors(cursor)
     conn.commit()
     conn.close()
 

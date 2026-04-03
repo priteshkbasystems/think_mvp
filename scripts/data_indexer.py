@@ -2,7 +2,7 @@ import os
 import sqlite3
 import pandas as pd
 
-from scripts.db_cache import init_db, register_bank
+from scripts.db_cache import init_db, assign_bank_color_if_missing, ensure_bank_registered_with_color
 
 DB_PATH = "/content/drive/MyDrive/THINK_MVP/04_Analysis_Output/transformation_cache.db"
 BASE_CORP_PATH = "/content/drive/MyDrive/THINK_MVP/01_Corporate_Documents"
@@ -34,6 +34,7 @@ def save_stock_return(bank_name, year, value):
     cursor = conn.cursor()
 
     cursor.execute("INSERT OR IGNORE INTO banks (bank_name) VALUES (?)", (bank_name,))
+    assign_bank_color_if_missing(cursor, bank_name)
     cursor.execute("SELECT bank_id FROM banks WHERE bank_name=?", (bank_name,))
     bank_id = cursor.fetchone()[0]
     cursor.execute("""
@@ -195,7 +196,7 @@ def main():
 
         print(f"📊 Indexing {bank_name}")
 
-        register_bank(bank_name)
+        ensure_bank_registered_with_color(bank_name)
 
         if info["stock"]:
             index_stock_data(bank_name, info["stock"])
