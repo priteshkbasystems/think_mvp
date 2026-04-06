@@ -22,13 +22,8 @@ This document is written so that ChatGPT (or any LLM) can quickly understand the
   - `db_cache.py`: Central SQLite schema + caching helpers for scores, reviews, embeddings, and dashboard tables.
   - `dashboard_data_engine.py`: Reads from the cache DB and generates topic sentiment, correlations, lags, predictions, highlights for dashboards.
   - `data_indexer.py`: Indexes raw source data into a consistent structure for downstream steps.
-  - `transformation_correlation.py`: Links transformation/narrative measures with sentiment and stock metrics.
   - `narrative_score_generator.py`: Generates narrative / transformation scores and stores them.
-  - `ai_insight_generator.py`: High-level AI-generated narrative / executive insights, using cached metrics.
-  - `strategic_market_intelligence.py`: Wraps market and transformation analytics into a report.
   - `topic_discovery.py`: Additional topic / theme discovery logic (beyond simple KMeans topics).
-  - `model_manager.py`: Central utilities for loading / managing models and re-use.
-  - `env_check.py`, `input_handler.py`, `test_module.py`, `test_sentiments.py`: Utility / testing / environment-check scripts.
   - `scripts/utils/`
     - `sentiment_utils.py`: Utilities to combine text sentiment with star ratings and classify final sentiment labels.
 
@@ -50,30 +45,7 @@ High-level steps:
    - Writes:
      - `bank_trend_report.txt`
      - `bank_trend_data.json` (used later by downstream market/sentiment steps).
-3. **Transformation Intelligence** – `scripts.transformation_correlation.main`
-   - Analyzes transformation/narrative metrics vs sentiment/stock performance.
-   - Writes correlation/insight reports and/or caches results in SQLite.
-4. **Corporate Narrative Score** – `scripts.narrative_score_generator.generate_narrative_scores`
-   - Computes per-bank *narrative / transformation* scores (e.g., based on corporate PDFs).
-   - Stores them in the SQLite DB (`narrative_scores` table in `db_cache.py`).
-5. **Dashboard Data Engine** – `scripts.dashboard_data_engine.main`
-   - Reads from SQLite (`review_sentiments`, `narrative_scores`, `sentiment_scores`, `pdf_cache`, etc.).
-   - Materializes:
-     - Topic sentiment aggregates.
-     - Narrative–sentiment correlations.
-     - Narrative lag metrics.
-     - Basic linear sentiment forecasts.
-     - Narrative highlights.
-   - Writes all of the above into specific dashboard tables (see DB schema below).
-6. **Strategic Market Intelligence** – `scripts.strategic_market_intelligence.main`
-   - High-level report combining:
-     - Sentiment trends.
-     - Stock returns.
-     - Transformation intensity from corporate PDFs.
-   - Saves `strategic_market_intelligence_report.txt`.
-7. **AI Executive Insights** – `scripts.ai_insight_generator.main`
-   - Consumes DB tables and/or generated text reports.
-   - Produces `executive_ai_insights.txt`, summarising key risks, opportunities, and trends.
+3. **Further steps** – `pipeline_runner.py` runs the remaining stages in order (corporate topic sentiment, narrative scores, topic alignment, aspect sentiment, dashboard engine, scenario simulation, transformation impact, source concordance, topic/journey sentiment, transformation competencies and performance index, corporate sentiment model, success factors, transformation lag, topic mapping, financial extraction, etc.). Open that file for the authoritative step list and imports.
 
 ### 2.2 Core sentiment & topic engine (`scripts/processor.py`)
 
@@ -228,8 +200,8 @@ These are consumed by transformation/market/dashboard scripts to avoid recomputa
 - **Usage**:
   - `scripts/processor.TextProcessor`:
     - `encode(texts)` to obtain embeddings per review for clustering and topic/keyword analysis.
-  - `scripts/db_cache.py` and `scripts/transformation_correlation.py`:
-    - Separate **embedding cache** tables / helpers store arbitrary embeddings for PDF sentences and transformation analysis.
+  - `scripts/db_cache.py`:
+    - **Embedding cache** helpers store arbitrary text embeddings (e.g. for reuse across analyses).
 - **Purpose**:
   - Provide semantically meaningful vector representations of reviews (and sometimes PDF sentences) which can be clustered or similarity-searched.
 
@@ -259,23 +231,7 @@ These are consumed by transformation/market/dashboard scripts to avoid recomputa
 - **Purpose**:
   - Extract interpretable keywords that describe each cluster for executives / dashboards.
 
-### 4.6 Transformation / narrative embedding model
-
-- **File**: `scripts/transformation_correlation.py`
-- **Underlying model**: `SentenceTransformer("all-MiniLM-L6-v2")`
-- **Usage**:
-  - Compute embeddings for:
-    - A curated list of `TRANSFORMATION_THEMES` (phrases about digital transformation, AI, etc.).
-    - Sentences from PDF annual reports.
-  - Cache embeddings in SQLite (`embedding_cache` table).
-  - Compute similarity between PDF sentences and transformation themes to derive a per-year **transformation intensity score**.
-- **Purpose**:
-  - Quantify how strongly a bank’s corporate reports focus on digital/strategic transformation.
-  - These scores are later correlated with:
-    - Sentiment trends (`bank_trend_data.json`).
-    - Stock returns.
-
-### 4.7 Dashboard analytics models
+### 4.6 Dashboard analytics models
 
 Located mainly in `scripts/dashboard_data_engine.py`:
 
@@ -305,9 +261,7 @@ All outputs are persisted back into:
    - All review-based metrics ultimately come from `scripts/processor.TextProcessor.process`.
 3. **Use `db_cache.py` + `dashboard_data_engine.py` to understand dashboard metrics**:
    - Tables define what is available to BI/UX; functions define how each metric is derived.
-4. **Use `transformation_correlation.py` and `strategic_market_intelligence.py` for market/transformation logic**:
-   - They explain how narrative intensity and sentiment relate to stock returns.
-5. **Treat `models/` as the canonical place for ML components**:
+4. **Treat `models/` as the canonical place for ML components**:
    - Sentiment, embeddings, and topics are all wrapped under this folder and reused across scripts.
 
 With just this file, you can reconstruct:

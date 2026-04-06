@@ -312,6 +312,15 @@ def _migrate_bank_id_across_tables(cursor):
             )
 
 
+def _drop_legacy_tables(cursor):
+    for name in (
+        "sentiment_taxonomy",
+        "conversation_sentiment_flow",
+        "human_labels",
+    ):
+        cursor.execute(f"DROP TABLE IF EXISTS {name}")
+
+
 # ==========================================
 # INIT DB (FULL PIPELINE SAFE)
 # ==========================================
@@ -319,6 +328,8 @@ def init_db():
 
     conn = get_connection()
     cursor = conn.cursor()
+
+    _drop_legacy_tables(cursor)
 
     # ------------------------------
     # CORE TABLES
@@ -579,27 +590,6 @@ def init_db():
     )
     """)
 
-    cursor.execute("""
-    CREATE TABLE IF NOT EXISTS sentiment_taxonomy (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        bank_name TEXT,
-        year INTEGER,
-        review_text TEXT,
-        emotion TEXT,
-        category TEXT
-    )
-    """)
-
-    cursor.execute("""
-    CREATE TABLE IF NOT EXISTS conversation_sentiment_flow (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        conversation_id TEXT,
-        step INTEGER,
-        message TEXT,
-        sentiment REAL
-    )
-    """)
-
     # ------------------------------
     # PIPELINE CONTROL
     # ------------------------------
@@ -674,18 +664,6 @@ def init_db():
     )
     """)
 
-    # ==========================================
-    # HUMAN FEEDBACK LOOP
-    # ==========================================
-    cursor.execute("""
-    CREATE TABLE IF NOT EXISTS human_labels(
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    review_text TEXT,
-    ai_label TEXT,
-    human_label TEXT,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    )
-    """)
     _migrate_financial_metrics_to_text_if_needed(cursor)
     _migrate_bank_id_across_tables(cursor)
     backfill_all_bank_colors(cursor)
@@ -872,30 +850,6 @@ def save_review_sentiment(bank, year, text, rating, score, label):
     (bank_id, bank_name, year, review_text, review_hash, rating, sentiment_score, sentiment_label)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     """, (bank_id, bank, year, text, h, rating, score, label))
-
-    conn.commit()
-    conn.close()
-
-
-# ==========================================
-# TAXONOMY (FIXED YOUR ERROR)
-# ==========================================
-def save_sentiment_taxonomy(bank, year, text, emotion, category):
-
-    conn = get_connection()
-    cursor = conn.cursor()
-
-    cursor.execute("SELECT bank_id FROM banks WHERE bank_name=?", (bank,))
-    row = cursor.fetchone()
-    if not row:
-        conn.close()
-        return
-    bank_id = row[0]
-    cursor.execute("""
-    INSERT INTO sentiment_taxonomy
-    (bank_id, bank_name, year, review_text, emotion, category)
-    VALUES (?, ?, ?, ?, ?, ?)
-    """, (bank_id, bank, year, text, emotion, category))
 
     conn.commit()
     conn.close()
