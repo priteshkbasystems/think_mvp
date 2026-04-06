@@ -1,5 +1,6 @@
 import sqlite3
 import os
+from services.openai_service import OpenAIService, USE_OPENAI
 
 DB_PATH = "/content/drive/MyDrive/THINK_MVP/04_Analysis_Output/transformation_cache.db"
 
@@ -12,6 +13,7 @@ def generate_narrative_scores():
 
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
+    openai = OpenAIService() if USE_OPENAI else None
 
     cursor.execute(
         """
@@ -34,6 +36,23 @@ def generate_narrative_scores():
             continue
 
         narrative_score = round(((float(avg_doc_signed) + 1.0) / 2.0) * 100.0, 2)
+        if USE_OPENAI and openai is not None:
+            cursor.execute(
+                """
+                SELECT t.text
+                FROM pdf_cache p
+                JOIN pdf_text_cache t ON t.file_path = p.file_path
+                WHERE p.year=? AND p.file_path LIKE ?
+                LIMIT 1
+                """,
+                (int(year), f"%/{bank_name}/%"),
+            )
+            row_text = cursor.fetchone()
+            if row_text and row_text[0]:
+                analysis = openai.narrative_analysis(row_text[0][:6000])
+                ai_score = analysis.get("narrative_score")
+                if isinstance(ai_score, (int, float)):
+                    narrative_score = round(float(ai_score), 2)
 
         cursor.execute(
             """

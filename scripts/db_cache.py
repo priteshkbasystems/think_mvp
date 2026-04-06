@@ -476,6 +476,17 @@ def init_db():
     """)
 
     cursor.execute("""
+    CREATE TABLE IF NOT EXISTS ai_response_cache (
+        cache_key TEXT PRIMARY KEY,
+        cache_type TEXT,
+        model TEXT,
+        request_hash TEXT,
+        response_json TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+    """)
+
+    cursor.execute("""
     CREATE TABLE IF NOT EXISTS transformation_competencies (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         bank_name TEXT,

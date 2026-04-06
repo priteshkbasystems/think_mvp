@@ -1,6 +1,7 @@
 from models.sentiment_model import SentimentModel
 from models.embedding_model import EmbeddingModel
 from models.topic_model import TopicModel
+from services.openai_service import OpenAIService, USE_OPENAI
 
 from scripts.utils.sentiment_utils import analyze_sentiment
 
@@ -16,6 +17,8 @@ class TextProcessor:
         self.sentiment_model = SentimentModel()
         self.embedding_model = EmbeddingModel()
         self.topic_model = TopicModel(n_clusters=2)
+        self.use_openai = USE_OPENAI
+        self.openai = OpenAIService() if self.use_openai else None
 
     def process(self, texts, ratings=None):
 
@@ -51,10 +54,19 @@ class TextProcessor:
         # SAFE CLUSTERING FIX
         # ==============================
 
-        if len(texts) < self.topic_model.model.n_clusters:
-            topics = [0] * len(texts)
+        if self.use_openai:
+            candidate_topics = ["service_quality", "app_experience", "pricing", "security", "other"]
+            topic_labels = [
+                x["topic"]
+                for x in self.openai.topic_classification_batch(texts, candidates=candidate_topics)
+            ]
+            topic_to_id = {t: i for i, t in enumerate(candidate_topics)}
+            topics = [topic_to_id.get(t, topic_to_id["other"]) for t in topic_labels]
         else:
-            topics = self.topic_model.fit_predict(embeddings)
+            if len(texts) < self.topic_model.model.n_clusters:
+                topics = [0] * len(texts)
+            else:
+                topics = self.topic_model.fit_predict(embeddings)
 
         results = []
         cluster_data = defaultdict(list)

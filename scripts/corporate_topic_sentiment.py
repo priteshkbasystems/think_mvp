@@ -2,8 +2,9 @@ import re
 import numpy as np
 from collections import defaultdict
 
-from sentence_transformers import SentenceTransformer
 from models.sentiment_model import SentimentModel
+from models.embedding_model import EmbeddingModel
+from services.openai_service import OpenAIService, USE_OPENAI
 
 
 class CorporateTopicSentiment:
@@ -13,8 +14,9 @@ class CorporateTopicSentiment:
         print("Loading Corporate Topic Sentiment Engine...")
 
         self.sentiment_model = SentimentModel()
-
-        self.embedder = SentenceTransformer("all-MiniLM-L6-v2")
+        self.use_openai = USE_OPENAI
+        self.openai = OpenAIService() if self.use_openai else None
+        self.embedder = None if self.use_openai else EmbeddingModel()
 
         # transformation themes
         self.topics = [
@@ -30,7 +32,7 @@ class CorporateTopicSentiment:
             "data analytics"
         ]
 
-        self.topic_embeddings = self.embedder.encode(self.topics)
+        self.topic_embeddings = None if self.use_openai else self.embedder.encode(self.topics)
 
     def split_sentences(self, text):
 
@@ -41,6 +43,8 @@ class CorporateTopicSentiment:
         return sentences
 
     def classify_topic(self, sentence):
+        if self.use_openai:
+            return self.openai.topic_classification(sentence, candidates=self.topics)["topic"]
 
         emb = self.embedder.encode([sentence])[0]
 
@@ -58,12 +62,15 @@ class CorporateTopicSentiment:
             return {}
 
         sentiments = self.sentiment_model.predict_batch(sentences)
+        topics = (
+            [x["topic"] for x in self.openai.topic_classification_batch(sentences, self.topics)]
+            if self.use_openai
+            else [self.classify_topic(s) for s in sentences]
+        )
 
         topic_scores = defaultdict(list)
 
-        for sentence, sentiment in zip(sentences, sentiments):
-
-            topic = self.classify_topic(sentence)
+        for sentence, sentiment, topic in zip(sentences, sentiments, topics):
 
             label = sentiment["label"]
             score = sentiment["score"]

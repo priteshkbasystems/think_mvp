@@ -1,7 +1,8 @@
 import re
 import numpy as np
 from models.sentiment_model import SentimentModel
-from sentence_transformers import SentenceTransformer
+from models.embedding_model import EmbeddingModel
+from services.openai_service import OpenAIService, USE_OPENAI
 
 
 def detect_thai(text):
@@ -92,7 +93,9 @@ class CorporateSentimentAnalyzer:
         print("Loading Corporate Sentiment Analyzer...")
 
         self.sentiment_model = SentimentModel()
-        self.embedder = SentenceTransformer("all-MiniLM-L6-v2")
+        self.use_openai = USE_OPENAI
+        self.openai = OpenAIService() if self.use_openai else None
+        self.embedder = None if self.use_openai else EmbeddingModel()
 
         self.sentence_pos_threshold = sentence_pos_threshold
         self.sentence_neg_threshold = sentence_neg_threshold
@@ -112,9 +115,11 @@ class CorporateSentimentAnalyzer:
             "operations efficiency",
         ]
 
-        self.topic_embeddings = self.embedder.encode(self.topics)
+        self.topic_embeddings = None if self.use_openai else self.embedder.encode(self.topics)
 
     def classify_topic(self, sentence):
+        if self.use_openai:
+            return self.openai.topic_classification(sentence, candidates=self.topics)["topic"]
 
         emb = self.embedder.encode([sentence])[0]
 
@@ -139,9 +144,13 @@ class CorporateSentimentAnalyzer:
                 continue
 
             sentiments = self.sentiment_model.predict_batch(sents)
+            topics = (
+                [x["topic"] for x in self.openai.topic_classification_batch(sents, self.topics)]
+                if self.use_openai
+                else [self.classify_topic(s) for s in sents]
+            )
 
-            for sent, sentiment in zip(sents, sentiments):
-                topic = self.classify_topic(sent)
+            for sent, sentiment, topic in zip(sents, sentiments, topics):
                 label = sentiment["label"]
                 conf = sentiment["score"]
                 signed = to_signed_score(label, conf)

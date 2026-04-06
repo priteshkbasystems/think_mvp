@@ -31,6 +31,7 @@ streamlit==1.33.0
 # Web / Utilities
 requests==2.31.0
 beautifulsoup4==4.12.3
+openai
 
 # Testing
 pytest==8.2.0

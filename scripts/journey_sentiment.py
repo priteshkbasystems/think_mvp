@@ -1,5 +1,6 @@
 import sqlite3
 import numpy as np
+from services.openai_service import OpenAIService, USE_OPENAI
 
 DB_PATH = "/content/drive/MyDrive/THINK_MVP/04_Analysis_Output/transformation_cache.db"
 
@@ -16,8 +17,15 @@ class JourneySentiment:
 
     def __init__(self):
         print("Loading Journey Sentiment Engine")
+        self.use_openai = USE_OPENAI
+        self.openai = OpenAIService() if self.use_openai else None
 
     def detect_stage(self, text):
+        if self.use_openai:
+            return self.openai.topic_classification(
+                text,
+                candidates=list(journey_keywords.keys()) + ["other"],
+            )["topic"]
 
         text = text.lower()
 
@@ -44,10 +52,17 @@ class JourneySentiment:
         stages = {}
 
         for text, score in rows:
-
             stage = self.detect_stage(text)
+            value = score
+            if self.use_openai:
+                s = self.openai.sentiment(text)
+                value = float(s["score"])
+                if s["label"] == "NEGATIVE":
+                    value = -value
+                elif s["label"] == "NEUTRAL":
+                    value = 0.0
 
-            stages.setdefault(stage, []).append(score)
+            stages.setdefault(stage, []).append(value)
 
         results = {}
 

@@ -1,7 +1,7 @@
 import sqlite3
 import numpy as np
-from sentence_transformers import SentenceTransformer
 from sklearn.metrics.pairwise import cosine_similarity
+from models.embedding_model import EmbeddingModel
 
 DB_PATH = "/content/drive/MyDrive/THINK_MVP/04_Analysis_Output/transformation_cache.db"
 
@@ -20,7 +20,7 @@ class TransformationCompetencyEngine:
 
         print("Loading Transformation Competency Engine")
 
-        self.model = SentenceTransformer("all-MiniLM-L6-v2")
+        self.model = EmbeddingModel()
 
         self.comp_embeddings = self.model.encode(COMPETENCIES)
 

@@ -1,5 +1,5 @@
 import numpy as np
-from sentence_transformers import SentenceTransformer
+from models.embedding_model import EmbeddingModel
 
 
 class TopicAlignmentEngine:
@@ -8,7 +8,7 @@ class TopicAlignmentEngine:
 
         print("Loading Topic Alignment Engine...")
 
-        self.model = SentenceTransformer("all-MiniLM-L6-v2")
+        self.model = EmbeddingModel()
 
     def align_topics(self, corporate_topics, customer_topics):
 

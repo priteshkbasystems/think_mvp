@@ -1,8 +1,9 @@
 import numpy as np
 from collections import defaultdict
-from sentence_transformers import SentenceTransformer
 from scripts.utils.sentiment_utils import analyze_sentiment
 from models.sentiment_model import SentimentModel
+from models.embedding_model import EmbeddingModel
+from services.openai_service import OpenAIService, USE_OPENAI
 import time
 
 
@@ -12,7 +13,9 @@ class AspectSentimentAnalyzer:
 
         print("🚀 Loading Aspect Sentiment Analyzer...")
 
-        self.embedder = SentenceTransformer("all-MiniLM-L6-v2")
+        self.use_openai = USE_OPENAI
+        self.openai = OpenAIService() if self.use_openai else None
+        self.embedder = None if self.use_openai else EmbeddingModel()
         self.sentiment_model = SentimentModel()
 
         self.aspects = [
@@ -25,8 +28,8 @@ class AspectSentimentAnalyzer:
             "user experience"
         ]
 
-        # ✅ Precompute aspect embeddings once
-        self.aspect_embeddings = self.embedder.encode(self.aspects)
+        # ✅ Precompute aspect embeddings once (local fallback mode)
+        self.aspect_embeddings = None if self.use_openai else self.embedder.encode(self.aspects)
 
         print("✅ Aspect model ready")
 
@@ -34,9 +37,12 @@ class AspectSentimentAnalyzer:
     # Batch Aspect Classification
     # -----------------------------------------
     def classify_aspect_batch(self, texts):
+        if self.use_openai:
+            items = self.openai.topic_classification_batch(texts, candidates=self.aspects)
+            return [x.get("topic", "user experience") for x in items]
 
         # ✅ Encode all texts in batch (FAST)
-        text_embeddings = self.embedder.encode(texts, batch_size=128)
+        text_embeddings = self.embedder.encode(texts)
 
         # Cosine similarity via dot product
         scores = np.dot(text_embeddings, self.aspect_embeddings.T)
