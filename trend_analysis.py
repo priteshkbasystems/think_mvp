@@ -4,6 +4,7 @@ import sqlite3
 import pandas as pd
 from collections import defaultdict
 import hashlib
+import re
 from concurrent.futures import ProcessPoolExecutor
 import multiprocessing
 
@@ -11,6 +12,7 @@ from models.sentiment_model import SentimentModel
 from scripts.utils.sentiment_utils import sentiment_label
 from scripts.progress_tracker import ProgressTracker
 from scripts.db_cache import register_bank, get_bank_id
+from services.openai_service import OpenAIService, USE_OPENAI
 
 
 BASE_CORP_PATH = "/content/drive/MyDrive/THINK_MVP/01_Corporate_Documents"
@@ -23,6 +25,9 @@ CONTRADICTION_THRESHOLD = 0.8
 
 BATCH_SIZE = 256
 STEP_NAME = "STEP 2 — SENTIMENT TREND"
+AI_OVERRIDE_CONFIDENCE_THRESHOLD = 0.7
+LOW_CONFIDENCE_THRESHOLD = 0.6
+CONTRAST_WORDS = ("but", "however", "although")
 
 
 # --------------------------------------------------
@@ -57,6 +62,59 @@ def fuse_sentiment(text_score, rating):
     contradiction = abs(text_score - normalized_rating) > CONTRADICTION_THRESHOLD
 
     return final, contradiction
+
+
+def analyze_local_sentiment(prediction, rating):
+    score = float(prediction["score"])
+    if prediction["label"] == "NEGATIVE":
+        score = -score
+    elif prediction["label"] == "NEUTRAL":
+        score = 0.0
+    final_score, contradiction = fuse_sentiment(score, rating)
+    local_label = sentiment_label(final_score)
+    local_confidence = float(prediction.get("score", 0.0))
+    return final_score, local_label, local_confidence, contradiction
+
+
+def _has_mixed_language(text):
+    s = text or ""
+    has_ascii = bool(re.search(r"[A-Za-z]", s))
+    has_non_ascii = bool(re.search(r"[^\x00-\x7F]", s))
+    return has_ascii and has_non_ascii
+
+
+def should_use_ai(review_text, sentiment_score, local_confidence):
+    text = (review_text or "").strip()
+    lower_text = text.lower()
+    return (
+        (-0.3 <= float(sentiment_score) <= 0.3)
+        or (len(text) > 200)
+        or _has_mixed_language(text)
+        or (local_confidence < LOW_CONFIDENCE_THRESHOLD)
+        or any(w in lower_text for w in CONTRAST_WORDS)
+    )
+
+
+def analyze_ai_sentiment(openai_service, texts):
+    if not openai_service or not texts:
+        return []
+    return openai_service.analyze_ai_sentiment_batch(texts)
+
+
+def merge_results(local_label, ai_result):
+    ai_label = None
+    ai_confidence = None
+    ai_reason = None
+    final_label = local_label
+    source = "local"
+    if ai_result:
+        ai_label = ai_result.get("sentiment_label")
+        ai_confidence = float(ai_result.get("confidence", 0.0))
+        ai_reason = ai_result.get("reason")
+        if ai_confidence > AI_OVERRIDE_CONFIDENCE_THRESHOLD and ai_label in {"Positive", "Neutral", "Negative"}:
+            final_label = ai_label
+            source = "hybrid"
+    return final_label, source, ai_label, ai_confidence, ai_reason
 
 
 # --------------------------------------------------
@@ -183,8 +241,9 @@ def bulk_insert_reviews(cursor, rows):
     cursor.executemany(
         """
         INSERT OR IGNORE INTO review_sentiments
-        (bank_id, bank_name, year, review_text, review_hash, rating, sentiment_score, sentiment_label, review_source)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        (bank_id, bank_name, year, review_text, review_hash, rating, sentiment_score, sentiment_label, review_source,
+         ai_sentiment_label, ai_confidence, ai_reason, sentiment_source)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         rows
     )
@@ -248,6 +307,8 @@ def process_bank(args):
     bank, path = args
 
     sentiment_model = SentimentModel()
+    ai_service = OpenAIService() if USE_OPENAI else None
+    ai_hash_cache = {}
     tracker = ProgressTracker()
 
     conn = sqlite3.connect(DB_PATH)
@@ -305,21 +366,45 @@ def process_bank(args):
             preds = sentiment_model.predict_batch(batch_texts)
 
             bulk_rows = []
+            ai_candidate_idx = []
+            ai_candidate_texts = []
+            local_rows = []
 
             for j, p in enumerate(preds):
-
-                score = p["score"]
-
-                if p["label"] == "NEGATIVE":
-                    score = -score
-
-                final_score, contradiction = fuse_sentiment(
-                    score,
-                    batch_ratings[j]
+                final_score, local_label, local_conf, contradiction = analyze_local_sentiment(
+                    p, batch_ratings[j]
                 )
+                local_rows.append((final_score, local_label, local_conf, contradiction))
+                if USE_OPENAI and should_use_ai(batch_texts[j], final_score, local_conf):
+                    ai_candidate_idx.append(j)
+                    ai_candidate_texts.append(batch_texts[j])
 
-                label = sentiment_label(final_score)
+            ai_results_map = {}
+            if ai_candidate_idx and ai_service:
+                try:
+                    pending_idx = []
+                    pending_texts = []
+                    for idx, txt in zip(ai_candidate_idx, ai_candidate_texts):
+                        h = batch_hashes[idx]
+                        if h in ai_hash_cache:
+                            ai_results_map[idx] = ai_hash_cache[h]
+                        else:
+                            pending_idx.append(idx)
+                            pending_texts.append(txt)
+                    if pending_texts:
+                        ai_batch_results = analyze_ai_sentiment(ai_service, pending_texts)
+                        for k, idx in enumerate(pending_idx):
+                            ai_result = ai_batch_results[k] if k < len(ai_batch_results) else None
+                            ai_results_map[idx] = ai_result
+                            ai_hash_cache[batch_hashes[idx]] = ai_result
+                except Exception as e:
+                    print(f"[AI_LOG] sentiment_fallback_error: {e}")
 
+            for j in range(len(batch_texts)):
+                final_score, local_label, _local_conf, contradiction = local_rows[j]
+                final_label, source, ai_label, ai_confidence, ai_reason = merge_results(
+                    local_label, ai_results_map.get(j)
+                )
                 bulk_rows.append(
                     (
                         batch_bank_ids[j],
@@ -329,8 +414,12 @@ def process_bank(args):
                         batch_hashes[j],
                         batch_ratings[j],
                         final_score,
-                        label,
-                        batch_sources[j]
+                        final_label,
+                        batch_sources[j],
+                        ai_label,
+                        ai_confidence,
+                        ai_reason,
+                        source,
                     )
                 )
 

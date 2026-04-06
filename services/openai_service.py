@@ -16,6 +16,7 @@ _NARRATIVE_MODEL = "openai/gpt-oss-20b:free"
 _EMBEDDING_MODEL = "nvidia/llama-nemotron-embed-vl-1b-v2:free"
 _OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 _API_CALL_DELAY_SECONDS = 5
+_API_TIMEOUT_SECONDS = 30
 
 
 class OpenAIService:
@@ -135,6 +136,7 @@ class OpenAIService:
                 response = self.client.chat.completions.create(
                     model=model,
                     temperature=0,
+                    timeout=_API_TIMEOUT_SECONDS,
                     response_format={"type": "json_object"},
                     messages=[
                         {"role": "system", "content": system_prompt},
@@ -189,6 +191,30 @@ class OpenAIService:
         score = max(0.0, min(1.0, score))
         return {"label": label, "score": score}
 
+    def analyze_ai_sentiment(self, text: str) -> Dict[str, Any]:
+        payload = {"text": text or ""}
+        data = self._chat_json(
+            model=_SENTIMENT_TOPIC_MODEL,
+            system_prompt=(
+                "Return STRICT JSON only with keys: "
+                "sentiment_label (Positive|Neutral|Negative), confidence (0..1), reason (short)."
+            ),
+            user_payload=payload,
+            cache_type="ai_sentiment",
+            max_retries=2,
+        )
+        label = str(data.get("sentiment_label", "Neutral")).strip().title()
+        if label not in {"Positive", "Neutral", "Negative"}:
+            label = "Neutral"
+        confidence = float(data.get("confidence", 0.0))
+        confidence = max(0.0, min(1.0, confidence))
+        reason = str(data.get("reason", "")).strip()
+        return {
+            "sentiment_label": label,
+            "confidence": confidence,
+            "reason": reason,
+        }
+
     def sentiment_batch(self, texts: List[str]) -> List[Dict[str, Any]]:
         if not texts:
             return []
@@ -221,6 +247,46 @@ class OpenAIService:
                 score = float(item.get("score", 0.0))
                 score = max(0.0, min(1.0, score))
                 out.append({"label": label, "score": score})
+        return out
+
+    def analyze_ai_sentiment_batch(self, texts: List[str]) -> List[Dict[str, Any]]:
+        if not texts:
+            return []
+        chunk_size = 10
+        out: List[Dict[str, Any]] = []
+        for i in range(0, len(texts), chunk_size):
+            chunk = texts[i : i + chunk_size]
+            payload = {"texts": chunk}
+            data = self._chat_json(
+                model=_SENTIMENT_TOPIC_MODEL,
+                system_prompt=(
+                    "Return STRICT JSON only in this format: "
+                    "{\"items\":[{\"sentiment_label\":\"Positive|Neutral|Negative\","
+                    "\"confidence\":0.0,\"reason\":\"short\"}]}. "
+                    "Keep same order as input."
+                ),
+                user_payload=payload,
+                cache_type="ai_sentiment_batch",
+                max_retries=2,
+            )
+            items = data.get("items", [])
+            if not isinstance(items, list) or len(items) != len(chunk):
+                out.extend([self.analyze_ai_sentiment(t) for t in chunk])
+                continue
+            for item in items:
+                label = str(item.get("sentiment_label", "Neutral")).strip().title()
+                if label not in {"Positive", "Neutral", "Negative"}:
+                    label = "Neutral"
+                confidence = float(item.get("confidence", 0.0))
+                confidence = max(0.0, min(1.0, confidence))
+                reason = str(item.get("reason", "")).strip()
+                out.append(
+                    {
+                        "sentiment_label": label,
+                        "confidence": confidence,
+                        "reason": reason,
+                    }
+                )
         return out
 
     def topic_classification(self, text: str, candidates: Optional[List[str]] = None) -> Dict[str, Any]:
@@ -296,7 +362,11 @@ class OpenAIService:
             raise RuntimeError("OpenAI client is not initialized")
 
         time.sleep(_API_CALL_DELAY_SECONDS)
-        response = self.client.embeddings.create(model=_EMBEDDING_MODEL, input=text)
+        response = self.client.embeddings.create(
+            model=_EMBEDDING_MODEL,
+            input=text,
+            timeout=_API_TIMEOUT_SECONDS,
+        )
         vector = response.data[0].embedding
         self._log_response(
             "embedding_api_response",

@@ -321,6 +321,19 @@ def _drop_legacy_tables(cursor):
         cursor.execute(f"DROP TABLE IF EXISTS {name}")
 
 
+def _ensure_review_sentiment_ai_columns(cursor):
+    cursor.execute("PRAGMA table_info(review_sentiments)")
+    cols = {r[1] for r in cursor.fetchall()}
+    if "ai_sentiment_label" not in cols:
+        cursor.execute("ALTER TABLE review_sentiments ADD COLUMN ai_sentiment_label TEXT")
+    if "ai_confidence" not in cols:
+        cursor.execute("ALTER TABLE review_sentiments ADD COLUMN ai_confidence REAL")
+    if "ai_reason" not in cols:
+        cursor.execute("ALTER TABLE review_sentiments ADD COLUMN ai_reason TEXT")
+    if "sentiment_source" not in cols:
+        cursor.execute("ALTER TABLE review_sentiments ADD COLUMN sentiment_source TEXT")
+
+
 # ==========================================
 # INIT DB (FULL PIPELINE SAFE)
 # ==========================================
@@ -389,9 +402,14 @@ def init_db():
         sentiment_score REAL,
         sentiment_label TEXT,
         topic_id INTEGER,
-        review_source TEXT
+        review_source TEXT,
+        ai_sentiment_label TEXT,
+        ai_confidence REAL,
+        ai_reason TEXT,
+        sentiment_source TEXT
     )
     """)
+    _ensure_review_sentiment_ai_columns(cursor)
 
     cursor.execute("""
     CREATE INDEX IF NOT EXISTS idx_review_hash
