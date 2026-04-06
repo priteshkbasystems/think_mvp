@@ -15,6 +15,7 @@ _SENTIMENT_TOPIC_MODEL = "openai/gpt-oss-20b:free"
 _NARRATIVE_MODEL = "openai/gpt-oss-20b:free"
 _EMBEDDING_MODEL = "nvidia/llama-nemotron-embed-vl-1b-v2:free"
 _OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
+_API_CALL_DELAY_SECONDS = 5
 
 
 class OpenAIService:
@@ -99,6 +100,12 @@ class OpenAIService:
         conn.commit()
         conn.close()
 
+    def _log_response(self, tag: str, payload: Dict[str, Any]):
+        try:
+            print(f"[AI_LOG] {tag}: {json.dumps(payload, ensure_ascii=False)}")
+        except Exception:
+            print(f"[AI_LOG] {tag}: <unserializable response>")
+
     def _chat_json(
         self,
         model: str,
@@ -115,11 +122,16 @@ class OpenAIService:
         req_hash = self._stable_hash({"model": model, "payload": user_payload, "cache_type": cache_type})
         cached = self._get_ai_cache(cache_type, req_hash)
         if cached is not None:
+            self._log_response(
+                "chat_cache_hit",
+                {"cache_type": cache_type, "model": model, "request_hash": req_hash, "response": cached},
+            )
             return cached
 
         last_error = None
         for attempt in range(max_retries):
             try:
+                time.sleep(_API_CALL_DELAY_SECONDS)
                 response = self.client.chat.completions.create(
                     model=model,
                     temperature=0,
@@ -131,10 +143,30 @@ class OpenAIService:
                 )
                 content = response.choices[0].message.content or "{}"
                 data = json.loads(content)
+                self._log_response(
+                    "chat_api_response",
+                    {
+                        "cache_type": cache_type,
+                        "model": model,
+                        "request_hash": req_hash,
+                        "attempt": attempt + 1,
+                        "response": data,
+                    },
+                )
                 self._set_ai_cache(cache_type, model, req_hash, data)
                 return data
             except Exception as exc:
                 last_error = exc
+                self._log_response(
+                    "chat_api_error",
+                    {
+                        "cache_type": cache_type,
+                        "model": model,
+                        "request_hash": req_hash,
+                        "attempt": attempt + 1,
+                        "error": str(exc),
+                    },
+                )
                 time.sleep(min(2 ** attempt, 5))
 
         raise RuntimeError(f"OpenAI request failed after retries: {last_error}")
@@ -251,15 +283,25 @@ class OpenAIService:
         if row:
             import numpy as np
 
-            return np.frombuffer(row[0], dtype=np.float32).tolist()
+            vector = np.frombuffer(row[0], dtype=np.float32).tolist()
+            self._log_response(
+                "embedding_cache_hit",
+                {"model": _EMBEDDING_MODEL, "text_hash": text_hash, "dim": len(vector)},
+            )
+            return vector
 
         if not USE_OPENAI:
             raise RuntimeError("USE_OPENAI is disabled")
         if self.client is None:
             raise RuntimeError("OpenAI client is not initialized")
 
+        time.sleep(_API_CALL_DELAY_SECONDS)
         response = self.client.embeddings.create(model=_EMBEDDING_MODEL, input=text)
         vector = response.data[0].embedding
+        self._log_response(
+            "embedding_api_response",
+            {"model": _EMBEDDING_MODEL, "text_hash": text_hash, "dim": len(vector)},
+        )
 
         import numpy as np
 
