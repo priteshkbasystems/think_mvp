@@ -8,8 +8,8 @@ class SentimentModel:
     _device = None
     _openai = None
 
-    def __init__(self):
-        self.use_openai = USE_OPENAI
+    def __init__(self, use_openai=None):
+        self.use_openai = USE_OPENAI if use_openai is None else bool(use_openai)
         self.labels = ["NEGATIVE", "NEUTRAL", "POSITIVE"]
 
         if self.use_openai:

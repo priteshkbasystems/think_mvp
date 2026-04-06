@@ -306,7 +306,8 @@ def process_bank(args):
 
     bank, path = args
 
-    sentiment_model = SentimentModel()
+    # Force local model for primary sentiment scoring in review sentiment flow.
+    sentiment_model = SentimentModel(use_openai=False)
     ai_service = OpenAIService() if USE_OPENAI else None
     ai_hash_cache = {}
     tracker = ProgressTracker()

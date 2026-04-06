@@ -24,7 +24,8 @@ class OpenAIService:
 
     def __init__(self, db_path: str = DB_PATH):
         if OpenAIService._client is None and USE_OPENAI:
-            api_key = "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"
+            #api_key = "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"
+            api_key = "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"
             if not api_key:
                 raise RuntimeError("Set OPENROUTER_API_KEY to use OpenRouter")
             OpenAIService._client = OpenAI(
